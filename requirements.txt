@@ -1,0 +1,4 @@
+# Core
+requests>=2.31.0
+# True land type (ESA WorldCover). Without it the code falls back automatically to OpenStreetMap then to FRP estimation
+rasterio>=1.3

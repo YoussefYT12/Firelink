@@ -1,0 +1,2 @@
+# Minimum libraries needed to run on a host (excluding heavy rasterio)
+requests>=2.31.0

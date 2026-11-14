@@ -1,0 +1,1969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FireLink - VIIRS/MODIS Reconciliation Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+<style>
+  :root {
+    --bg: #0b0d14; --panel: #141826; --card: #1b2033; --line: #262c44;
+    --text: #e8eaf2; --muted: #8f96b0; --accent: #ff6b4a;
+    --critical: #ff3b30; --high: #ff9f0a; --ok: #34d399;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, Arial, sans-serif; }
+  #app { display: flex; height: 100vh; }
+  #sidebar { width: 340px; min-width: 340px; background: var(--panel); border-right: 1px solid var(--line);
+    padding: 16px; overflow-y: auto; }
+  #map { flex: 1; background: #0b0d14; }
+  h1 { font-size: 22px; margin: 0; color: var(--accent); letter-spacing: .3px; }
+  .subtitle { font-size: 12px; color: var(--muted); margin: 2px 0 14px; }
+  .audience { font-size: 11px; color: var(--muted); margin: 0 0 12px; line-height: 1.45; }
+  #side-head { padding-bottom: 4px; }
+  #tabs { position: sticky; top: -16px; z-index: 20; display: flex; gap: 6px; margin: 0 -16px 12px;
+          padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .tab { flex: 1; padding: 8px 4px; font-size: 12px; border-radius: 8px; cursor: pointer;
+         background: var(--card); border: 1px solid var(--line); color: var(--muted); }
+  .tab:hover:not(.active) { border-color: var(--accent); color: var(--text); }
+  .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; animation: fade .18s ease-out; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  h1 { font-size: 20px; }
+  .subtitle { margin: 2px 0 4px; }
+  .map-legend { background: rgba(17, 20, 26, .92); border: 1px solid var(--line); border-radius: 10px;
+                padding: 8px 10px; font-size: 11px; color: var(--text); max-width: 235px; line-height: 1.35;
+                max-height: calc(100vh - 96px); overflow-y: auto; overflow-x: hidden; }
+  /* The control starts collapsed (small button) so it doesn't cover the map or get cut off on short screens */
+  .map-legend.collapsed { padding: 0; border-color: var(--accent); background: rgba(27, 32, 51, .97);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .5); }
+  .map-legend.collapsed .lg-head { padding: 9px 12px; }
+  .map-legend.collapsed .lg-head .lg-title { color: var(--accent); font-weight: 700; font-size: 10.5px; }
+  .map-legend.collapsed .lg-head:hover { background: rgba(255, 107, 74, .14); }
+  .map-legend.collapsed .lg-body { display: none; }
+  .map-legend .lg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    width: 100%; margin: 0; padding: 0; background: none; border: 0; color: var(--text);
+    font: inherit; text-align: left; cursor: pointer; border-radius: 9px; }
+  .map-legend .lg-head:hover .lg-title { color: var(--accent); }
+  .map-legend .lg-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .map-legend .lg-head .lg-title { margin-bottom: 0; }
+  .map-legend .lg-chev { flex: 0 0 auto; color: var(--muted); font-size: 10px; line-height: 1; }
+  .map-legend.collapsed .lg-chev { color: var(--accent); font-size: 11px; }
+  .map-legend .lg-open-hint { color: #c3c9dd; font-weight: 400; }
+  .map-legend .lg-body { margin-top: 8px; }
+  .map-legend::-webkit-scrollbar { width: 8px; }
+  .map-legend::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+  .side-toggle-btn { width: 34px; height: 34px; padding: 0; border-radius: 8px; background: var(--card);
+    color: var(--text); border: 1px solid var(--line); font-size: 16px; line-height: 1; cursor: pointer; }
+  .side-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+  body.side-hidden #sidebar { display: none; }
+  .map-legend .lg-title { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 6px; }
+  .map-legend .lg-row { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0; }
+  .map-legend .lg-dot { flex: 0 0 auto; border-radius: 50%; box-sizing: border-box; margin-top: 2px; }
+  .map-legend .lg-note { color: var(--muted); margin-top: 6px; line-height: 1.4; }
+  .map-legend .lg-toggle { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px;
+                           border-top: 1px solid var(--line); font-size: 11px; cursor: pointer; color: var(--text); }
+  .map-legend .lg-toggle input { accent-color: var(--accent); margin: 0; cursor: pointer; }
+  .map-legend .lg-select { width: 100%; font-size: 10.5px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; margin-bottom: 6px; }
+  .map-legend input[type=range] { width: 100%; margin: 2px 0 4px; }
+  body.cvd { --critical: #D55E00; --high: #F0E442; }
+  body.cvd .cal-cell.elevated { border-style: dashed; }
+  body.cvd .cal-cell.unusual { border-style: double; border-width: 3px; }
+  .map-legend .lg-hi { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ff3b30; margin-right: 4px; }
+  h2 { font-size: 13px; margin: 0 0 8px; color: var(--text); text-transform: uppercase; letter-spacing: .8px; }
+  section { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  section:last-child { border-bottom: 0; }
+  label, .hint { font-size: 12px; color: var(--muted); }
+  .hint { line-height: 1.45; margin-top: 6px; }
+  input[type=date] { width: 100%; margin: 6px 0 8px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px; color-scheme: dark; }
+  button { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font-size: 13px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn-row { display: flex; gap: 8px; } .btn-row button { flex: 1; }
+  #view-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  #view-label b { color: var(--text); }
+  #data-status { font-size: 11px; color: var(--muted); margin: 8px 0 2px; line-height: 1.45; }
+  .partial-tag { font-size: 9px; text-transform: uppercase; letter-spacing: .6px; padding: 2px 5px;
+                 border-radius: 5px; background: rgba(255,159,10,.18); color: #ffc078; border: 1px solid rgba(255,159,10,.45); }
+  #data-status b { color: #ffc078; font-weight: 600; }
+  #data-status a { color: var(--accent); text-decoration: underline; cursor: pointer; }
+  .data-lag { margin-top: 6px; padding: 6px 8px; border-radius: 7px; font-size: 11px; line-height: 1.4;
+              background: rgba(255,159,10,.12); border-left: 3px solid #ff9f0a; color: #ffd9a0; }
+  #busy-msg { font-size: 12px; margin-top: 8px; min-height: 16px; color: var(--muted); }
+  #busy-msg.error { color: #ff6b6b; }
+  .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--muted);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #area-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  #area-row b { color: var(--text); font-weight: 600; word-break: break-all; }
+  #clear-area-btn { padding: 2px 8px; font-size: 12px; }
+
+  #alerts-count { font-size: 11px; background: var(--card); border-radius: 10px; padding: 2px 8px; margin-left: 6px; color: var(--muted); }
+  .alert { background: var(--card); border-left: 4px solid var(--high); border-radius: 8px; padding: 9px 10px;
+    margin-bottom: 8px; cursor: pointer; }
+  .alert:hover { background: #222944; }
+  .alert.Critical { border-left-color: var(--critical); }
+  .alert .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .alert .place { font-size: 13px; font-weight: 600; }
+  .alert .badge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px; background: var(--high); color: #000; }
+  .alert.Critical .badge { background: var(--critical); color: #fff; }
+  .alert .meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .alert .fire-type { font-size: 11px; color: #cbd1e8; margin-top: 2px; }
+  .alert .fire-type .source { color: var(--muted); font-style: italic; }
+  .alert .why { font-size: 11px; color: #b7bdd6; margin-top: 4px; line-height: 1.4; }
+  .no-alerts { font-size: 12px; color: var(--ok); background: var(--card); border-radius: 8px; padding: 9px 10px; }
+
+  select.field { width: 100%; margin: 6px 0 0; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  #calendar-section summary { cursor: pointer; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
+  #cal-msg { font-size: 12px; margin-top: 8px; min-height: 14px; color: var(--muted); }
+  #cal-msg.error { color: #ff6b6b; }
+  #cal-summary { font-size: 12px; color: var(--text); margin-top: 8px; }
+  #cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 8px; }
+  .cal-head { font-size: 10px; color: var(--muted); text-align: center; }
+  .cal-cell { aspect-ratio: 1; border-radius: 5px; background: var(--card); font-size: 10px; color: #e8eaf2;
+    padding: 2px 3px; cursor: pointer; border: 1px solid transparent; overflow: hidden; }
+  .cal-cell.empty { visibility: hidden; cursor: default; }
+  .cal-cell.elevated { border-color: var(--high); }
+  .cal-cell.unusual { border-color: var(--critical); box-shadow: inset 0 0 0 1px var(--critical); font-weight: 700; }
+  .cal-cell.partial { opacity: .55; border: 1px dashed var(--muted); }
+  .cal-cell.nodata { cursor: default; background: repeating-linear-gradient(45deg, #1b2033, #1b2033 4px, #262c44 4px, #262c44 8px); }
+  .cal-period { background: var(--card); border-left: 4px solid var(--critical); border-radius: 8px; padding: 8px 10px;
+    margin-top: 8px; font-size: 12px; cursor: pointer; line-height: 1.45; }
+  .cal-period:hover { background: #222944; }
+  #cal-notes { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+  #stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { background: var(--card); border-radius: 8px; padding: 8px 10px; border-left: 4px solid #444; }
+  .stat .count { font-size: 18px; font-weight: 700; }
+  .stat .label { font-size: 11px; color: var(--muted); }
+  .stat.confirmed { border-color: #ff3b30; } .stat.likely { border-color: #ff9f0a; }
+  .stat.single { border-color: #4a90ff; } .stat.weak { border-color: #6b7280; }
+  #meta-line { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  #filters-section { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 6px; }
+  #f-count { font-size: 11.5px; color: var(--muted); margin: 10px 0 2px; }
+  #f-count b { color: var(--text); }
+  #f-frp { width: 100%; }
+  .legend-item { display: flex; align-items: center; font-size: 12px; margin-bottom: 5px; color: var(--muted); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; flex-shrink: 0; }
+  #timeline-label { display: block; min-height: 30px; margin-bottom: 6px; }
+  #timeline-slider { width: 100%; accent-color: var(--accent); }
+  details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+  details input[type=file] { margin-top: 8px; font-size: 12px; color: var(--text); width: 100%; }
+  #status-msg { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
+
+  /* coordinates, history, charts */
+  .coord-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .coord-grid label { display: block; font-size: 11px; }
+  .coord-grid input, input.num { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 8px; font-size: 13px; }
+  input[type=month] { width: 100%; margin: 6px 0 8px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px; color-scheme: dark; }
+  #coords-msg, #hist-msg { font-size: 12px; margin-top: 6px; min-height: 14px; color: var(--muted); }
+  #coords-msg.error, #hist-msg.error { color: #ff6b6b; }
+  .demo-banner { background: #5b1d1d; border: 1px solid var(--critical); color: #ffd2cf; border-radius: 8px;
+    padding: 7px 10px; font-size: 12px; margin-top: 8px; font-weight: 600; }
+  .cmp-card { background: var(--card); border-left: 4px solid var(--muted); border-radius: 8px; padding: 9px 10px;
+    margin-top: 8px; font-size: 12px; line-height: 1.5; }
+  .cmp-card .big { font-size: 15px; font-weight: 700; }
+  .cmp-card.well_above { border-left-color: var(--critical); } .cmp-card.above { border-left-color: var(--high); }
+  .cmp-card.typical { border-left-color: var(--ok); } .cmp-card.below, .cmp-card.well_below { border-left-color: #4a90ff; }
+
+  /* download the history of the drawn box */
+  #dl-panel { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+    border-radius: 8px; padding: 9px 10px; margin-top: 8px; }
+  #dl-panel .dl-title { font-size: 12px; font-weight: 600; color: var(--text); }
+  #dl-area-line { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  #dl-area-line b { color: var(--text); font-weight: 600; word-break: break-all; }
+  .pbar { height: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+    overflow: hidden; margin-top: 8px; }
+  .pfill { height: 100%; width: 0%; background: var(--accent); transition: width .3s linear; }
+  #dl-status { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  #dl-status b { color: var(--text); }
+  #dl-msg { font-size: 12px; margin-top: 6px; min-height: 14px; color: var(--muted); line-height: 1.45; }
+  #dl-msg.error { color: #ff6b6b; }
+  #dl-msg.ok { color: var(--ok); }
+  #dl-panel.attn { box-shadow: 0 0 0 2px var(--accent); }
+
+  canvas.chart { width: 100%; display: block; margin-top: 8px; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; cursor: crosshair; }
+  .chart-title { font-size: 11px; color: var(--muted); margin-top: 10px; }
+  .chart-legend { font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .chart-legend .sw { display: inline-block; width: 10px; height: 3px; margin-right: 5px; vertical-align: middle; }
+  .hist-list { font-size: 12px; margin-top: 6px; line-height: 1.5; color: var(--text); }
+  .hist-list b { color: var(--accent); }
+  #hist-notes { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+  #hist-calib { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+  #history-section summary { cursor: pointer; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
+  #coords-details summary { margin-top: 8px; }
+  #coords-card, #file-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-top: 10px;
+    background: rgba(255,255,255,.02); }
+  .card-title { font-size: 12px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--text); margin-bottom: 8px; }
+  #coords-card label { color: var(--muted); font-size: 10.5px; }
+  #coords-details { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 2px; }
+  #coords-details summary { margin-top: 8px; }
+  #file-input { width: 100%; margin-top: 6px; font-size: 11px; color: var(--muted); padding: 9px;
+    border: 1px dashed var(--line); border-radius: 8px; background: var(--bg); cursor: pointer; }
+  #file-input::file-selector-button { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+    padding: 6px 10px; margin-right: 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+  #file-name { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  .leaflet-container { background: #0b0d14 !important; font-family: inherit; }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--card); color: var(--text); }
+  .leaflet-popup-content b { color: var(--accent); }
+  .leaflet-control-layers { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+  .pulse-marker { position: relative; width: 18px; height: 18px; }
+  .pulse-marker span { position: absolute; inset: 0; border-radius: 50%; background: var(--c); animation: pulse 1.8s ease-out infinite; }
+  .pulse-marker i { position: absolute; left: 4px; top: 4px; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--c); border: 2px solid #fff; }
+  @keyframes pulse { 0% { transform: scale(.6); opacity: .85; } 100% { transform: scale(2.8); opacity: 0; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <header id="side-head">
+      <h1>🔥 FireLink</h1>
+      <div class="subtitle">VIIRS / MODIS hotspot reconciliation</div>
+      <div class="audience">For early-warning teams, scientists, land managers and firefighters.</div>
+    </header>
+
+    <nav id="tabs" role="tablist">
+      <button class="tab active" data-tab="fires" role="tab">🔥 Fires</button>
+      <button class="tab" data-tab="calendar" role="tab">📅 Calendar</button>
+      <button class="tab" data-tab="history" role="tab">📈 History</button>
+    </nav>
+
+    <div class="tab-panel active" data-panel="fires">
+
+    <section id="search-card">
+      <h2>Search</h2>
+      <div id="view-label">Loading…</div>
+      <label for="date-input">Pick any date (back to 2012)</label>
+      <input type="date" id="date-input" />
+      <label for="days-select" style="margin-top:2px; display:block;">Search window</label>
+      <select id="days-select" style="width:100%; margin:6px 0 8px; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px;">
+        <option value="1">1 day</option>
+        <option value="3">3 days (safer if unsure of the exact date)</option>
+        <option value="5">5 days</option>
+      </select>
+      <div class="btn-row">
+        <button id="search-btn" class="primary">🔍 Show fires</button>
+        <button id="live-btn">📡 Today</button>
+      </div>
+      <div id="data-status"></div>
+      <button id="share-btn" style="width:100%; margin-top:8px;">🔗 Copy shareable link</button>
+      <div id="area-row">
+        <span>Area: <b id="area-label">Whole world</b></span>
+        <button id="clear-area-btn" hidden>✕ Whole world</button>
+      </div>
+      <div class="hint">To search one region instead, draw a box with the ▭ tool on the map, or type the coordinates here:</div>
+
+      <div id="coords-card">
+        <div class="card-title">⌖ Enter coordinates</div>
+        <div class="coord-grid">
+          <div><label for="c-west">West longitude</label><input class="num" id="c-west" type="number" step="any" min="-180" max="180" placeholder="e.g. 29.5"></div>
+          <div><label for="c-east">East longitude</label><input class="num" id="c-east" type="number" step="any" min="-180" max="180" placeholder="e.g. 32.8"></div>
+          <div><label for="c-south">South latitude</label><input class="num" id="c-south" type="number" step="any" min="-90" max="90" placeholder="e.g. 29.9"></div>
+          <div><label for="c-north">North latitude</label><input class="num" id="c-north" type="number" step="any" min="-90" max="90" placeholder="e.g. 31.7"></div>
+        </div>
+        <button id="coords-box-btn" class="primary" style="width:100%; margin-top:8px;">Show fires in this box</button>
+        <details id="coords-details">
+          <summary>Or a point + a radius</summary>
+          <div class="coord-grid" style="margin-top:8px;">
+            <div><label for="p-lat">Latitude</label><input class="num" id="p-lat" type="number" step="any" min="-90" max="90" placeholder="e.g. 30.6"></div>
+            <div><label for="p-lon">Longitude</label><input class="num" id="p-lon" type="number" step="any" min="-180" max="180" placeholder="e.g. 31.0"></div>
+            <div style="grid-column: 1 / 3;"><label for="p-km">Radius (km, 1–500)</label><input class="num" id="p-km" type="number" step="any" min="1" max="500" value="50"></div>
+          </div>
+          <button id="coords-pt-btn" style="width:100%; margin-top:8px;">Show fires around this point</button>
+        </details>
+        <div id="coords-msg"></div>
+      </div>
+      <div id="busy-msg"></div>
+    </section>
+
+    <section id="filters-section">
+      <h2>🎛 Filters</h2>
+      <label for="f-sensor">Satellite</label>
+      <select id="f-sensor" class="field">
+        <option value="all">Both satellites (all detections)</option>
+        <option value="viirs">VIIRS only</option>
+        <option value="modis">MODIS only</option>
+        <option value="both">Seen by both satellites</option>
+      </select>
+      <label for="f-frp" style="display:block; margin-top:10px;">Min intensity (FRP) — <b id="f-frp-val">any</b></label>
+      <input type="range" id="f-frp" min="0" max="120" step="5" value="0" />
+      <label for="f-bright" style="display:block; margin-top:6px;">Min brightness</label>
+      <select id="f-bright" class="field">
+        <option value="0">Any brightness</option>
+        <option value="300">≥ 300 K</option>
+        <option value="330">≥ 330 K</option>
+        <option value="360">≥ 360 K</option>
+      </select>
+      <div class="hint">FRP (MW) = fire radiative power, how much heat the fire is pumping out. Brightness (K) = the satellite's measured temperature of the pixel.</div>
+      <div id="f-count"></div>
+      <button id="f-reset" style="width:100%; margin-top:8px;">⟲ Clear filters</button>
+    </section>
+
+    <section id="alerts-section">
+      <h2>⚠️ Alerts <span id="alerts-count"></span></h2>
+      <div id="alerts-list"><div class="no-alerts">Waiting for data…</div></div>
+    </section>
+
+    <section>
+      <div id="stats">
+        <div class="stat confirmed"><div class="count" id="count-confirmed">0</div><div class="label">Confirmed (both)</div></div>
+        <div class="stat likely"><div class="count" id="count-likely">0</div><div class="label">Likely match</div></div>
+        <div class="stat single"><div class="count" id="count-single">0</div><div class="label">Single source</div></div>
+        <div class="stat weak"><div class="count" id="count-weak">0</div><div class="label">Weak match</div></div>
+      </div>
+      <div id="meta-line"></div>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-top:10px;">
+        <input type="checkbox" id="show-all-toggle" />
+        <span>Also draw single-source &amp; weak matches</span>
+      </label>
+      <h2 style="margin-top:16px;">Timeline</h2>
+      <label id="timeline-label" for="timeline-slider">Load data first</label>
+      <input type="range" id="timeline-slider" min="0" max="1000" value="1000" disabled />
+      <div class="btn-row" style="margin-top:8px;">
+        <button id="play-btn" disabled>▶ Play</button>
+        <button id="reset-btn" disabled>⟲ Show all</button>
+      </div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button id="csv-btn" disabled>⬇ CSV</button>
+        <button id="geojson-btn" disabled>⬇ GeoJSON</button>
+      </div>
+      <div id="file-card">
+        <div class="card-title">📂 Open a saved file</div>
+        <div class="hint" style="margin-top:0;">Load a FireLink file you downloaded earlier (.geojson or .json) and the map draws it offline.</div>
+        <input type="file" id="file-input" accept=".geojson,.json" />
+        <div id="file-name"></div>
+      </div>
+      <div id="status-msg"></div>
+    </section>
+
+
+    </div><!-- /fires -->
+
+    <div class="tab-panel" data-panel="calendar">
+    <section id="calendar-section">
+      <details open>
+        <summary>📅 Activity calendar</summary>
+        <div class="hint">Day-by-day fire activity for the box you draw on the map. It flags unusual days and critical periods (2+ busy days in a row). Draw a box first (max ~17°×17°).</div>
+        <label for="cal-days" style="display:block; margin-top:8px;">Period (ends on the date above, or today)</label>
+        <select id="cal-days" class="field">
+          <option value="30">30 days</option>
+          <option value="60">60 days</option>
+          <option value="90">90 days</option>
+        </select>
+        <button id="cal-btn" class="primary" style="width:100%; margin-top:8px;">📅 Build calendar for this area</button>
+        <div id="cal-msg"></div>
+        <div id="cal-summary"></div>
+        <div id="cal-grid"></div>
+        <div id="cal-periods"></div>
+        <div id="cal-notes"></div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button id="cal-csv-btn" hidden>⬇ Calendar (CSV)</button>
+          <button id="cal-report-csv" hidden>⬇ Burned area (CSV)</button>
+        </div>
+        <button id="cal-report-pdf" class="primary" hidden style="width:100%; margin-top:6px;">🖨️ Burned-area report (PDF)</button>
+        <div class="hint" id="cal-legend"><span id="cal-legend-burned">"Burned" = estimate: 1 km pixel per fire cell per day (VIIRS 0.14 km², MODIS 1 km²), not a burned-scar measurement.</span> Darker = more fire events. Red outline = unusual day, amber = elevated, hatched = no data. "Unusual" means far above the typical day of this same area inside the chosen period. Click a day or a period to see it on the map.</div>
+      </details>
+    </section>
+
+    </div><!-- /calendar -->
+
+    <div class="tab-panel" data-panel="history">
+    <section id="history-section">
+      <details open>
+        <summary>📈 History since 2003</summary>
+        <div class="hint">Monthly fire hotspots for the area (a box you drew, typed, or the whole downloaded region), MODIS (2003→) and VIIRS (2012→) merged into one calibrated series. Compares a month with the historical average.</div>
+
+        <div id="dl-panel">
+          <div class="dl-title">⬇ Download the history of a box — no terminal needed</div>
+          <div id="dl-area-line">Area: <b id="dl-area">whole world (draw a box on the map)</b></div>
+          <label for="dl-range" style="display:block; margin-top:6px;">How far back</label>
+          <select id="dl-range" class="field">
+            <option value="2003">Since 2003 — full MODIS + VIIRS history (slowest)</option>
+            <option value="2012" selected>Since 2012 — VIIRS era only (faster)</option>
+            <option value="12m">Last 12 months — quickest</option>
+          </select>
+          <button id="dl-btn" class="primary" style="width:100%; margin-top:8px;">⬇ Download history for this box</button>
+          <div id="dl-est" class="hint"></div>
+          <div id="dl-progress" hidden>
+            <div class="pbar"><div class="pfill" id="dl-fill"></div></div>
+            <div id="dl-status"></div>
+            <button id="dl-cancel" style="width:100%; margin-top:6px;">⏹ Stop (keeps what was downloaded)</button>
+          </div>
+          <div id="dl-msg"></div>
+        </div>
+
+        <label for="hist-region" style="display:block; margin-top:8px;">Downloaded region</label>
+        <select id="hist-region" class="field"><option value="">Auto (the one that contains the area)</option></select>
+        <label for="hist-month" style="display:block; margin-top:8px;">Compare month (empty = current month)</label>
+        <input type="month" id="hist-month" min="2003-01">
+        <button id="hist-btn" class="primary" style="width:100%;">📈 Show history for this area</button>
+        <div id="hist-msg"></div>
+        <div id="hist-banner"></div>
+        <div id="hist-compare"></div>
+        <div class="chart-title" id="hist-chart1-title" hidden>Hotspots per month (click a month to compare it)</div>
+        <canvas class="chart" id="hist-chart1" hidden></canvas>
+        <div class="chart-legend" id="hist-legend1" hidden></div>
+        <label id="hist-raw-label" style="display:none; align-items:center; gap:8px; cursor:pointer; margin-top:6px;">
+          <input type="checkbox" id="hist-raw" /><span>Also show raw MODIS / VIIRS lines</span>
+        </label>
+        <div class="chart-title" id="hist-chart2-title" hidden>Typical year: average per calendar month</div>
+        <canvas class="chart" id="hist-chart2" hidden></canvas>
+        <div class="chart-legend" id="hist-legend2" hidden></div>
+        <div id="hist-lists"></div>
+        <div id="hist-calib"></div>
+        <div id="hist-notes"></div>
+        <button id="hist-csv-btn" hidden style="width:100%; margin-top:8px;">⬇ Download history (CSV)</button>
+      </details>
+    </section>
+
+    </div><!-- /history -->
+  </aside>
+  <div id="map"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script>
+  // Restore user choice (hide sidebar) before building the map so the size is correct from the start
+  try { if (localStorage.getItem('firelink_side_hidden') === '1') document.body.classList.add('side-hidden'); } catch (e) { /* ignore */ }
+  // ---------------------------------------------------------------- map setup
+  const map = L.map('map', {
+    preferCanvas: true,
+    minZoom: 2,
+    zoomSnap: 0.25,
+    maxBounds: [[-85, -180], [85, 180]],
+    maxBoundsViscosity: 1.0,
+    worldCopyJump: false
+  }).setView([25, 10], 2);
+
+  const tileOpts = { maxZoom: 18, noWrap: true };
+  const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    { ...tileOpts, subdomains: 'abcd', attribution: '&copy; OpenStreetMap contributors &copy; CARTO' });
+  const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    { ...tileOpts, subdomains: 'abcd', attribution: '&copy; OpenStreetMap contributors &copy; CARTO' });
+  const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { ...tileOpts, attribution: 'Tiles &copy; Esri' });
+  const streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { ...tileOpts, attribution: '&copy; OpenStreetMap contributors' });
+
+  // Country, province and city names + ocean and sea names: layers above the points in a dedicated pane,
+  // And they don't capture pointer events (pointer-events: none) so the points remain clickable.
+  map.createPane('labels');
+  map.getPane('labels').style.zIndex = 450;
+  map.getPane('labels').style.pointerEvents = 'none';
+  const placeLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    { ...tileOpts, pane: 'labels', attribution: 'Labels &copy; Esri' });
+  const oceanLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}',
+    { ...tileOpts, pane: 'labels', maxNativeZoom: 13, attribution: 'Ocean labels &copy; Esri' });
+
+  const BASEMAPS = { 'Satellite': satellite, 'Dark': dark, 'Light': light, 'Streets (OSM, local names)': streets };
+  // Satellite layers without labels, so we provide both. Dark/Light include country and city names, so we provide oceans only.
+  const LABELS_FOR = {
+    'Satellite': [placeLabels, oceanLabels],
+    'Dark': [oceanLabels],
+    'Light': [oceanLabels],
+    'Streets (OSM, local names)': []
+  };
+  satellite.addTo(map);
+  L.control.layers(BASEMAPS, { 'Country, province & city names': placeLabels, 'Ocean & sea names': oceanLabels },
+    { position: 'topright' }).addTo(map);
+
+  // ---------------------------------------------------------------- NASA GIBS imagery (true colour)
+  const GIBS_LAYERS = {
+    viirs: 'VIIRS_SNPP_CorrectedReflectance_TrueColor',
+    modis: 'MODIS_Terra_CorrectedReflectance_TrueColor'
+  };
+  const GIBS_STATE = { layer: 'none', opacity: 0.85 };
+  let gibsLayer = null;
+
+  function gibsDay() {
+    return (currentMeta.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  }
+
+  // GIBS imagery uses WMTS: {z}/{y}/{x} (row/column) — not {x}/{y} like other layers
+  function gibsUrl(layer, day) {
+    return 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/' + layer + '/default/' + day +
+      '/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg';
+  }
+
+  function updateGibs() {
+    const note = document.getElementById('gibs-note');
+    if (gibsLayer) { map.removeLayer(gibsLayer); gibsLayer = null; }
+    if (GIBS_STATE.layer === 'none') { if (note) note.textContent = ''; return; }
+    const day = gibsDay();
+    gibsLayer = L.tileLayer(gibsUrl(GIBS_LAYERS[GIBS_STATE.layer], day), {
+      tileSize: 256, maxNativeZoom: 9, maxZoom: 18, opacity: GIBS_STATE.opacity,
+      attribution: 'Imagery: NASA GIBS / Worldview'
+    });
+    gibsLayer.on('tileerror', () => {
+      if (note) note.textContent = 'No imagery for ' + day + ' yet — NASA publishes about a day behind.';
+    });
+    gibsLayer.on('load', () => { if (note) note.textContent = 'NASA true colour: ' + day; });
+    gibsLayer.addTo(map);
+    if (note) note.textContent = 'Loading NASA imagery for ' + day + '…';
+  }
+
+  // Color key: colors alone aren't sufficient for some people (color blindness), so we account for that
+  // Using size, white border and halo + textual description for each type + alternate palette customized for color blindness.
+  let legendEl = null;
+  // The key is collapsed by default: a small footprint on the map, and opens when the user needs it.
+  // The selection is saved in the browser, and if the screen is short (less than 760px) it stays collapsed initially.
+  let legendOpen = false;
+  try { legendOpen = localStorage.getItem('firelink_legend_open') === '1'; } catch (e) { /* ignore */ }
+  const legend = L.control({ position: 'bottomright' });
+  legend.onAdd = function () {
+    const d = L.DomUtil.create('div', 'map-legend');
+    d.setAttribute('role', 'note');
+    L.DomEvent.disableClickPropagation(d);
+    legendEl = d;
+    fillLegend(d);
+    return d;
+  };
+  function setLegendOpen(open) {
+    legendOpen = open;
+    try { localStorage.setItem('firelink_legend_open', open ? '1' : '0'); } catch (e) { /* ignore */ }
+    if (!legendEl) return;
+    legendEl.classList.toggle('collapsed', !open);
+    const head = legendEl.querySelector('.lg-head');
+    if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    // The text indicates it's a button: when collapsed "Map key · click to open", and when opened "Map key"
+    const label = legendEl.querySelector('.lg-label');
+    if (label) {
+      label.innerHTML = open
+        ? 'Map key'
+        : 'Map key <span class="lg-open-hint">· click to open</span>';
+    }
+    if (open) legendEl.scrollTop = 0;
+  }
+  function fillLegend(d) {
+    const rows = [['confirmed', 'Confirmed', 'both satellites saw it (largest, white ring, glow)'],
+                  ['likely', 'Likely', 'one satellite + a close detection from the other'],
+                  ['single', 'Single', 'one satellite only (smallest dot)'],
+                  ['weak', 'Weak', 'low-confidence detection']]
+      .map(([k, label, note]) => {
+        const r = RADIUS[k] * 1.6, ring = k === 'confirmed' ? '3px solid #fff' : '1px solid ' + COLORS[k];
+        return `<div class="lg-row"><span class="lg-dot" style="width:${r}px;height:${r}px;background:${COLORS[k]};border:${ring};"></span>` +
+               `<span><b>${label}</b><br><span style="color:var(--muted)">${note}</span></span></div>`;
+      }).join('');
+    d.innerHTML = '<button type="button" class="lg-head" aria-expanded="false" title="Open / close the map key">' +
+        '<span class="lg-title"><span class="lg-label">Map key</span></span>' +
+        '<span class="lg-chev">▾</span></button>' +
+      '<div class="lg-body">' + rows +
+      '<div class="lg-note">Dot size = confidence. Dots only, no colour needed: the text label in each popup names the type.</div>' +
+      `<label class="lg-toggle"><input type="checkbox" id="cvd-toggle" ${PALETTE_KEY === 'cvd' ? 'checked' : ''}>` +
+      '<span>Colour-blind safe colours</span></label>' +
+      '<div class="lg-title" style="margin-top:10px;">NASA imagery</div>' +
+      '<select id="gibs-select" class="lg-select" aria-label="NASA satellite imagery">' +
+        ['none', 'viirs', 'modis'].map(k => `<option value="${k}"${GIBS_STATE.layer === k ? ' selected' : ''}>` +
+          ({ none: 'Off', viirs: 'VIIRS true colour', modis: 'MODIS Terra true colour' })[k] + '</option>').join('') +
+      '</select>' +
+      `<input type="range" id="gibs-opacity" min="10" max="100" step="5" value="${Math.round(GIBS_STATE.opacity * 100)}" aria-label="Imagery opacity">` +
+      '<div class="lg-note" id="gibs-note"></div></div>';
+    d.querySelector('.lg-head').addEventListener('click', () => setLegendOpen(!legendOpen));
+    d.querySelector('#cvd-toggle').addEventListener('change', (e) => setPalette(e.target.checked ? 'cvd' : 'default'));
+    d.querySelector('#gibs-select').addEventListener('change', (e) => {
+      GIBS_STATE.layer = e.target.value;
+      updateGibs();
+    });
+    d.querySelector('#gibs-opacity').addEventListener('input', (e) => {
+      GIBS_STATE.opacity = Number(e.target.value) / 100;
+      if (gibsLayer) gibsLayer.setOpacity(GIBS_STATE.opacity);
+    });
+    if (GIBS_STATE.layer !== 'none') updateGibs();
+    setLegendOpen(legendOpen);
+  }
+
+  function setPalette(key) {
+    PALETTE_KEY = key;
+    COLORS = PALETTES[key];
+    try { localStorage.setItem('firelink_palette', key); } catch (e) { /* Special mode: no storage */ }
+    document.body.classList.toggle('cvd', key === 'cvd');
+    if (legendEl) fillLegend(legendEl);
+    if (allFeatures.length) drawFeatures(allFeatures);
+    if (lastCalendar) renderCalendar(lastCalendar);   // The calendar also changes its gradient
+  }
+
+  function applyLabelsFor(name) {
+    [placeLabels, oceanLabels].forEach(l => { if (map.hasLayer(l)) map.removeLayer(l); });
+    (LABELS_FOR[name] || []).forEach(l => l.addTo(map));
+  }
+  applyLabelsFor('Satellite');
+  map.on('baselayerchange', (e) => applyLabelsFor(e.name));
+
+  // No empty margins: the maximum zoom-out is computed so that the world fills the width and height of the screen (the poles get a bit cut off)
+  const WORLD = [[-85, -180], [85, 180]];
+  function fitMinZoom() {
+    map.setMinZoom(0);                              // Remove the old margin before calculation
+    map.setMinZoom(map.getBoundsZoom(WORLD, true)); // inside=true: the smallest zoom fills the whole screen
+  }
+  function showWorld() { map.setView([20, 0], map.getMinZoom()); }
+  map.invalidateSize();
+  fitMinZoom();
+  showWorld();
+  map.on('resize', fitMinZoom);
+  window.addEventListener('load', () => { map.invalidateSize(); fitMinZoom(); });
+
+  const haloLayer = L.layerGroup().addTo(map);     // Red halo around confirmed fires
+  const markersLayer = L.layerGroup().addTo(map);  // the points themselves
+  const alertLayer = L.layerGroup().addTo(map);    // pulsing alert markers
+  const drawnItems = new L.FeatureGroup().addTo(map);
+
+  map.addControl(new L.Control.Draw({
+    draw: { polygon: false, polyline: false, circle: false, circlemarker: false, marker: false,
+            rectangle: { shapeOptions: { color: '#ff6b4a', weight: 2 } } },
+    edit: false
+  }));
+
+  let savedTab = 'fires';
+  try { savedTab = localStorage.getItem(TAB_KEY) || 'fires'; } catch (e) { /* ignore */ }
+  showTab(savedTab);
+
+  // ---------------------------------------------------------------- state
+  // default palette + colorblind-safe palette (based on Okabe–Ito: burnt orange,
+  // light yellow, sky blue, light gray — colors that stay distinguishable for red/green color blindness).
+  const PALETTES = {
+    default: { confirmed: '#ff3b30', likely: '#ff9f0a', single: '#4a90ff', weak: '#6b7280', heat: '255,107,74' },
+    cvd: { confirmed: '#D55E00', likely: '#F0E442', single: '#56B4E9', weak: '#C9C9C9', heat: '240,228,66' }
+  };
+  let PALETTE_KEY = 'default';
+  try { PALETTE_KEY = localStorage.getItem('firelink_palette') === 'cvd' ? 'cvd' : 'default'; } catch (e) { /* ignore */ }
+  let COLORS = PALETTES[PALETTE_KEY];
+  document.body.classList.toggle('cvd', PALETTE_KEY === 'cvd');
+  const RADIUS = { confirmed: 6, likely: 5, single: 3, weak: 4 };
+  const PRIORITY = { single: 0, weak: 1, likely: 2, confirmed: 3 };
+  legend.addTo(map);
+
+  // button toggles the sidebar: map takes the whole screen when you want to view the world
+  const sideToggle = L.control({ position: 'topleft' });
+  sideToggle.onAdd = function () {
+    const b = L.DomUtil.create('button', 'side-toggle-btn');
+    b.type = 'button';
+    b.title = 'Hide / show the side panel';
+    b.setAttribute('aria-label', 'Hide or show the side panel');
+    b.textContent = document.body.classList.contains('side-hidden') ? '⟩' : '⟨';
+    L.DomEvent.disableClickPropagation(b);
+    L.DomEvent.on(b, 'click', () => toggleSidebar());
+    return b;
+  };
+  function toggleSidebar(force) {
+    const hide = force === undefined ? !document.body.classList.contains('side-hidden') : force;
+    document.body.classList.toggle('side-hidden', hide);
+    try { localStorage.setItem('firelink_side_hidden', hide ? '1' : '0'); } catch (e) { /* ignore */ }
+    const b = document.querySelector('.side-toggle-btn');
+    if (b) b.textContent = hide ? '⟩' : '⟨';
+    setTimeout(() => { map.invalidateSize(); fitMinZoom(); }, 60);
+  }
+  sideToggle.addTo(map);
+
+  let allFeatures = [];
+  let fileCounts = null, fileTruncated = false;
+  let currentMeta = {};
+  let alertMarkers = [];
+  let currentBbox = null;        // null = whole world
+  let minTime = null, maxTime = null, playTimer = null;
+  let busy = false, liveFile = false;
+  let timeCutoff = null;         // from the timeline (null = all time)
+  const filters = { sensor: 'all', frp: 0, bright: 0 };
+
+  const $ = (id) => document.getElementById(id);
+
+  function kindOf(status) {
+    if (status.includes('Confirmed')) return 'confirmed';
+    if (status.includes('Likely')) return 'likely';
+    if (status.includes('Single')) return 'single';
+    return 'weak';
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // ---------------------------------------------------------------- tabs
+  const TAB_KEY = 'firelink_tab';
+  function showTab(name) {
+    if (!['fires', 'calendar', 'history'].includes(name)) name = 'fires';
+    document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+    try { localStorage.setItem(TAB_KEY, name); } catch (e) { /* ignore */ }
+    // canvas drawings: if rendered while hidden they appear empty, so redraw them when opened
+    if (name === 'history' && typeof lastHistory !== 'undefined' && lastHistory && typeof renderHistory === 'function') {
+      try { renderHistory(lastHistory); } catch (e) { /* ignore */ }
+    }
+  }
+  document.querySelectorAll('#tabs .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+  // ---------------------------------------------------------------- drawing points
+  function drawFeatures(features) {
+    markersLayer.clearLayers();
+    haloLayer.clearLayers();
+
+    const counts = { confirmed: 0, likely: 0, single: 0, weak: 0 };
+    features.forEach(f => { counts[kindOf(f.properties.status)]++; });
+    // file is abbreviated: use the full numbers stored in it (unless a filter is active, in which case the numbers must reflect what's visible)
+    if (fileTruncated && fileCounts && !filtersActive()) {
+      counts.single = fileCounts.single;
+      counts.weak = fileCounts.weak;
+    }
+
+    const showAll = $('show-all-toggle').checked;
+    const visible = features
+      .filter(f => showAll || PRIORITY[kindOf(f.properties.status)] >= 2)
+      .sort((a, b) => PRIORITY[kindOf(a.properties.status)] - PRIORITY[kindOf(b.properties.status)]);
+
+    visible.forEach(f => {
+      const [lon, lat] = f.geometry.coordinates;
+      const p = f.properties;
+      const kind = kindOf(p.status);
+      const color = COLORS[kind];
+
+      if (kind === 'confirmed') {
+        haloLayer.addLayer(L.circleMarker([lat, lon], {
+          radius: 13, stroke: false, fillColor: color, fillOpacity: 0.16, interactive: false
+        }));
+      }
+
+      const isConfirmed = kind === 'confirmed';
+      const m = L.circleMarker([lat, lon], {
+        radius: RADIUS[kind],
+        fillColor: color,
+        color: isConfirmed ? '#ffffff' : color,   // a clear white outline for confirmed points only, so they stand out immediately
+        weight: isConfirmed ? 2 : 1,
+        opacity: 1,
+        fillOpacity: isConfirmed ? 0.95 : 0.7
+      });
+      let html = `<b>${esc(p.status)}</b><br/>Lat/Lon: ${lat.toFixed(4)}, ${lon.toFixed(4)}<br/>`;
+      if (p.confidence_score != null) html += `Confidence: ${(p.confidence_score * 100).toFixed(1)}%<br/>`;
+      if (p.distance_km != null) html += `Distance between sources: ${p.distance_km} km<br/>`;
+      if (p.time_diff_hours != null) html += `Time difference: ${p.time_diff_hours} h<br/>`;
+      if (p.brightness != null) html += `Brightness: ${p.brightness} K<br/>`;
+      if (p.frp_mw != null) html += `Intensity (FRP): ${p.frp_mw} MW<br/>`;
+      html += `Satellite: ${p.viirs && p.modis ? 'VIIRS + MODIS' : p.viirs ? 'VIIRS' : 'MODIS'}<br/>`;
+      if (p.timestamp) html += `Detected: ${new Date(p.timestamp + 'Z').toUTCString()}`;
+      m.bindPopup(html);
+      markersLayer.addLayer(m);
+    });
+
+    $('count-confirmed').textContent = counts.confirmed.toLocaleString();
+    $('count-likely').textContent = counts.likely.toLocaleString();
+    $('count-single').textContent = counts.single.toLocaleString();
+    $('count-weak').textContent = counts.weak.toLocaleString();
+
+    $('f-count').innerHTML = allFeatures.length
+      ? `Showing <b>${visible.length.toLocaleString()}</b> of <b>${allFeatures.length.toLocaleString()}</b> detections`
+      : '';
+  }
+
+  // ---------------------------------------------------------------- alerts
+  function renderAlerts(alerts, total) {
+    alertLayer.clearLayers();
+    alertMarkers = [];
+    const list = $('alerts-list');
+    list.innerHTML = '';
+    $('alerts-count').textContent = alerts.length ? (total > alerts.length ? `${alerts.length} of ${total}` : String(alerts.length)) : '';
+
+    if (!alerts.length) {
+      list.innerHTML = '<div class="no-alerts">✓ No High/Critical fire clusters for this period.</div>';
+      return;
+    }
+
+    alerts.forEach((a, i) => {
+      const color = a.level === 'Critical' ? '#ff3b30' : '#ff9f0a';
+      const marker = L.marker([a.latitude, a.longitude], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div class="pulse-marker" style="--c:${color}"><span></span><i></i></div>`,
+          iconSize: [18, 18], iconAnchor: [9, 9]
+        })
+      });
+      marker.bindPopup(
+        `<b>${esc(a.level)} — ${esc(a.place)}</b><br/>${esc(a.fire_type)} <i>(${esc(a.fire_type_source)})</i><br/>${esc(a.summary)}<br/>` +
+        `<i>${esc(a.reasoning)}</i><br/>` +
+        (a.wind_text ? `🌬 ${esc(a.wind_text)}<br/>` : '') +
+        (a.protected_area ? `🛡 near ${esc(a.protected_area.name)} (${esc(a.protected_area.designation)}, ${a.protected_area.distance_km} km)<br/>` : '') +
+        `<b>Action:</b> ${esc(a.action)}`
+      );
+      alertLayer.addLayer(marker);
+      alertMarkers.push(marker);
+
+      const div = document.createElement('div');
+      div.className = 'alert ' + a.level;
+      div.innerHTML =
+        `<div class="top"><span class="place">${esc(a.place)}</span><span class="badge">${esc(a.level.toUpperCase())}</span></div>` +
+        `<div class="fire-type">${a.fire_type.includes('wildfire') ? '\ud83c\udf32' : a.fire_type.includes('grassland') ? '\ud83c\udf3e' : '\ud83c\udf3e'} ${esc(a.fire_type)}<br/><span class="source">${esc(a.fire_type_source)}</span></div>` +
+        `<div class="meta">${a.confirmed} confirmed · ${a.likely} likely · peak ${a.max_frp} MW</div>` +
+        (a.wind_text ? `<div class="meta">🌬 ${esc(a.wind_text)}</div>` : '') +
+        (a.protected_area ? `<div class="meta">🛡 near ${esc(a.protected_area.name)} (${esc(a.protected_area.designation)}, ${a.protected_area.distance_km} km)</div>` : '') +
+        `<div class="why">${esc(a.reasoning)}</div>`;
+      div.addEventListener('click', () => {
+        map.flyTo([a.latitude, a.longitude], 6, { duration: 1.1 });
+        map.once('moveend', () => marker.openPopup());
+      });
+      list.appendChild(div);
+    });
+  }
+
+  // ---------------------------------------------------------------- timeline
+  function setupTimeline() {
+    minTime = null; maxTime = null;
+    allFeatures.forEach(f => {
+      const t = f.properties.timestamp ? Date.parse(f.properties.timestamp + 'Z') : NaN;
+      f.properties._t = t;
+      if (!isNaN(t)) {
+        if (minTime === null || t < minTime) minTime = t;
+        if (maxTime === null || t > maxTime) maxTime = t;
+      }
+    });
+    const has = minTime !== null && maxTime !== null && maxTime > minTime;
+    $('timeline-slider').disabled = !has;
+    $('play-btn').disabled = !has;
+    $('reset-btn').disabled = !has;
+    $('timeline-slider').value = 1000;
+    $('timeline-label').textContent = has
+      ? 'Showing detections up to: ' + new Date(maxTime).toUTCString()
+      : 'Timeline needs detections spread over time';
+  }
+
+  function applyTimelineFilter(v) {
+    if (minTime === null || maxTime === null) return;
+    const cutoff = minTime + ((maxTime - minTime) * v) / 1000;
+    timeCutoff = cutoff;
+    $('timeline-label').textContent = 'Showing detections up to: ' + new Date(cutoff).toUTCString();
+    repaint();
+  }
+
+  // ---------------------------------------------------------------- filters (satellite / intensity / brightness)
+  function filtersActive() {
+    return filters.sensor !== 'all' || filters.frp > 0 || filters.bright > 0;
+  }
+
+  function matchesFilters(f) {
+    const p = f.properties;
+    if (filters.sensor === 'viirs' && !p.viirs) return false;
+    if (filters.sensor === 'modis' && !p.modis) return false;
+    if (filters.sensor === 'both' && !(p.viirs && p.modis)) return false;
+    if (filters.frp > 0 && !(Number(p.frp_mw) >= filters.frp)) return false;
+    if (filters.bright > 0 && !(Number(p.brightness) >= filters.bright)) return false;
+    return true;
+  }
+
+  // draws filtered items + those inside the timeline together, so the two filters don't interfere
+  function repaint() {
+    let fs = allFeatures;
+    if (timeCutoff !== null) fs = fs.filter(f => isNaN(f.properties._t) || f.properties._t <= timeCutoff);
+    if (filtersActive()) fs = fs.filter(matchesFilters);
+    drawFeatures(fs);
+  }
+
+  function syncFilterUI() {
+    filters.sensor = $('f-sensor').value;
+    filters.frp = Number($('f-frp').value) || 0;
+    filters.bright = Number($('f-bright').value) || 0;
+    $('f-frp-val').textContent = filters.frp > 0 ? `≥ ${filters.frp} MW` : 'any';
+    repaint();
+  }
+  ['f-sensor', 'f-frp', 'f-bright'].forEach(id => $(id).addEventListener('input', syncFilterUI));
+  $('f-reset').addEventListener('click', () => {
+    $('f-sensor').value = 'all'; $('f-frp').value = 0; $('f-bright').value = 0;
+    syncFilterUI();
+  });
+
+  function stopPlaying() {
+    if (playTimer) { clearInterval(playTimer); playTimer = null; }
+    $('play-btn').textContent = '▶ Play';
+  }
+
+  $('timeline-slider').addEventListener('input', () => { stopPlaying(); applyTimelineFilter(Number($('timeline-slider').value)); });
+  $('reset-btn').addEventListener('click', () => {
+    stopPlaying();
+    $('timeline-slider').value = 1000;
+    timeCutoff = null;
+    $('timeline-label').textContent = (maxTime !== null)
+      ? 'Showing detections up to: ' + new Date(maxTime).toUTCString()
+      : 'Timeline needs detections spread over time';
+    repaint();
+  });
+  $('play-btn').addEventListener('click', () => {
+    if (playTimer) { stopPlaying(); return; }
+    const slider = $('timeline-slider');
+    slider.value = 0; applyTimelineFilter(0);
+    $('play-btn').textContent = '⏸ Pause';
+    playTimer = setInterval(() => {
+      let v = Number(slider.value) + 8;
+      if (v >= 1000) { v = 1000; stopPlaying(); }
+      slider.value = v; applyTimelineFilter(v);
+    }, 120);
+  });
+  $('show-all-toggle').addEventListener('change', () => {
+    repaint();
+  });
+
+  // ---------------------------------------------------------------- render a payload
+  function bboxToBounds(b) {
+    const p = b.split(',').map(Number);
+    return (p.length === 4 && p.every(x => !isNaN(x))) ? [[p[1], p[0]], [p[3], p[2]]] : null;
+  }
+
+  function renderPayload(p) {
+    stopPlaying();
+    timeCutoff = null;
+    allFeatures = p.features || [];
+    fileCounts = p.counts || null;
+    fileTruncated = !!p.truncated;
+    // Small sizes (area / 1 day): draw every point to match calendar numbers. Everyone prefers compact.
+    $('show-all-toggle').checked = !fileTruncated && allFeatures.length <= 15000;
+    currentMeta = p.meta || {};
+
+    setupTimeline();
+    repaint();
+    $('csv-btn').disabled = $('geojson-btn').disabled = !allFeatures.length;
+    renderAlerts(p.alerts || [], p.alerts_total || 0);
+
+    const areaText = (currentMeta.bbox && currentMeta.bbox !== 'world' && currentMeta.bbox !== 'mock') ? 'selected area' : 'whole world';
+    const lag = Number(currentMeta.data_lag_days);
+    const when = currentMeta.date
+      ? (lag > 0 ? `${currentMeta.date} (newest published)` : currentMeta.date)
+      : 'today (live)';
+    $('view-label').innerHTML = `Showing: <b>${areaText}</b> · <b>${esc(when)}</b>` +
+      (currentMeta.partial_day ? ' <span class="partial-tag">partial day</span>' : '');
+
+    // Data status: number of observations + whether the day is still publishing + fast path for full day
+    const detTotal = (Number(currentMeta.viirs) || 0) + (Number(currentMeta.modis) || 0);
+    if (currentMeta.date || detTotal) {
+      const full = currentMeta.latest_complete_day;
+      $('data-status').innerHTML =
+        `${detTotal.toLocaleString()} detections` +
+        (currentMeta.partial_day ? ' · <b>today is still being published</b>' : '') +
+        (full && currentMeta.date !== full
+          ? ` · <a href="#" id="full-day-link">show the latest complete day (${esc(full)})</a>` : '');
+      const link = document.getElementById('full-day-link');
+      if (link) link.addEventListener('click', (e) => {
+        e.preventDefault();
+        $('date-input').value = full;
+        runQuery(full);
+      });
+    }
+    const rawLine = (currentMeta.viirs != null)
+      ? `Raw detections: ${currentMeta.viirs.toLocaleString()} VIIRS · ${currentMeta.modis.toLocaleString()} MODIS`
+      : '';
+    // NASA is slow to publish the current day: say it plainly instead of leaving the map blank without explanation
+    $('meta-line').innerHTML = esc(rawLine) + (currentMeta.note
+      ? `<div class="data-lag">🛰️ ${esc(currentMeta.note)}</div>` : '');
+    if (allFeatures.length === 0) {
+      $('status-msg').textContent = (currentMeta.note ? currentMeta.note + ' ' : '') +
+        'No Confirmed/Likely detections matched this date & area. ' +
+        'Tip: check "Also draw single-source & weak matches" above, or widen the search window to 3-5 days.';
+    } else {
+      $('status-msg').textContent = (currentMeta.note ? currentMeta.note + ' ' : '') +
+        `Loaded ${allFeatures.length.toLocaleString()} points` +
+        (fileTruncated ? ' (world-scale data: only Confirmed + Likely are drawn to keep the map fast).' : '.');
+    }
+
+    // Camera setup
+    const b = currentMeta.bbox && bboxToBounds(currentMeta.bbox);
+    if (b) {
+      map.fitBounds(b, { padding: [20, 20] });
+    } else if (currentMeta.bbox === 'world' || !allFeatures.length) {
+      showWorld();
+    } else {
+      const pts = allFeatures.map(f => [f.geometry.coordinates[1], f.geometry.coordinates[0]]);
+      map.fitBounds(pts, { padding: [30, 30] });
+    }
+  }
+
+  // ---------------------------------------------------------------- talking to the local server
+  function setBusy(on, msg, isError) {
+    busy = on;
+    $('search-btn').disabled = on;
+    $('live-btn').disabled = on;
+    const el = $('busy-msg');
+    el.className = isError ? 'error' : '';
+    el.innerHTML = on ? `<span class="spin"></span>${esc(msg)}` : esc(msg || '');
+  }
+
+  async function runQuery(date) {
+    if (busy) return;
+    const params = new URLSearchParams({ bbox: currentBbox || 'world', days: $('days-select').value });
+    if (date) params.set('date', date);
+    setBusy(true, 'Fetching from NASA FIRMS… (world-scale data can take up to a minute)');
+    try {
+      const res = await fetch('/api/query?' + params.toString());
+      let data;
+      try { data = await res.json(); }
+      catch (e) { throw new Error('Search needs the FireLink server. Start it with start_firelink.bat (or python run_all.py).'); }
+      if (!res.ok || data.error) throw new Error(data.error || ('Server error ' + res.status));
+      liveFile = false;
+      renderPayload(data);
+      setBusy(false, '');
+      if (GIBS_STATE.layer !== 'none') updateGibs();          // Images follow data date
+      try { history.replaceState(null, '', stateUrl()); } catch (e) { /* file:// */ }
+    } catch (e) {
+      setBusy(false, 'Could not load: ' + e.message, true);
+    }
+  }
+
+  $('search-btn').addEventListener('click', () => runQuery($('date-input').value || null));
+  $('live-btn').addEventListener('click', () => { $('date-input').value = ''; $('days-select').value = '1'; runQuery(null); });
+
+  // ---------------------------------------------------------------- shareable link (?bbox=&date=&days=)
+  function stateUrl() {
+    const p = new URLSearchParams();
+    if (currentBbox) p.set('bbox', currentBbox);
+    if (currentMeta.date) p.set('date', currentMeta.date);
+    const days = $('days-select').value;
+    if (days && days !== '1') p.set('days', days);
+    const qs = p.toString();
+    return location.origin + location.pathname + (qs ? '?' + qs : '');
+  }
+
+  $('share-btn').addEventListener('click', async () => {
+    const url = stateUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+      $('status-msg').textContent = 'Link copied — it reopens this exact area and date: ' + url;
+    } catch (e) {
+      window.prompt('Copy this link:', url);
+    }
+  });
+
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const BBOX_RE = /^(world|-?\d+(\.\d+)?(,-?\d+(\.\d+)?){3})$/;
+
+  // Reads bbox/date/days from the URL and opens the same state (if present)
+  function initFromUrl() {
+    const q = new URLSearchParams(location.search);
+    const bbox = q.get('bbox') || '';
+    const day = q.get('date') || '';
+    const days = q.get('days') || '';
+    if (['1', '3', '5'].includes(days)) $('days-select').value = days;
+    if (DATE_RE.test(day)) $('date-input').value = day;
+    if (BBOX_RE.test(bbox)) {
+      if (bbox !== 'world') {
+        fillBoxInputs(bbox);
+        applyTypedArea(bbox);
+        setCoordsMsg('Area from the shared link: ' + bbox);
+      }
+      runQuery(DATE_RE.test(day) ? day : null);
+      return true;
+    }
+    if (DATE_RE.test(day)) { runQuery(day); return true; }
+    return false;
+  }
+
+  // ---------------------------------------------------------------- choosing an area
+  function bboxFromLayer(layer) {
+    const b = layer.getBounds();
+    return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(x => x.toFixed(4)).join(',');
+  }
+  function updateAreaUI() {
+    $('area-label').textContent = currentBbox || 'Whole world';
+    $('clear-area-btn').hidden = !currentBbox;
+    updateDlArea();
+  }
+  // A single location defines the region: whether drawn with the mouse or coordinates typed by hand
+  function setArea(layer, bbox) {
+    drawnItems.clearLayers();
+    drawnItems.addLayer(layer);
+    currentBbox = bbox;
+    updateAreaUI();
+    if (typeof fillBoxInputs === 'function') fillBoxInputs(bbox);
+    runQuery($('date-input').value || null);
+  }
+  map.on(L.Draw.Event.CREATED, (e) => setArea(e.layer, bboxFromLayer(e.layer)));
+  $('clear-area-btn').addEventListener('click', () => {
+    drawnItems.clearLayers();
+    currentBbox = null;
+    updateAreaUI();
+    runQuery($('date-input').value || null);
+  });
+
+  // ---------------------------------------------------------------- activity calendar
+  let calBusy = false;
+  const STATUS_TEXT = {
+    normal: 'normal', elevated: 'ELEVATED activity', unusual: 'UNUSUAL activity',
+    partial: 'today (still in progress)', nodata: 'no data downloaded'
+  };
+
+  function setCalMsg(text, isError, spinning) {
+    const el = $('cal-msg');
+    el.className = isError ? 'error' : '';
+    el.innerHTML = spinning ? `<span class="spin"></span>${esc(text)}` : esc(text || '');
+  }
+
+  function fmtKm2(v) {
+    const n = Number(v) || 0;
+    return (n >= 100 ? Math.round(n).toLocaleString() : n.toFixed(n >= 10 ? 0 : 1)) + ' km²';
+  }
+
+  function areaSqDeg(bbox) {
+    const p = bbox.split(',').map(Number);
+    return Math.max(0, p[2] - p[0]) * Math.max(0, p[3] - p[1]);
+  }
+
+  function renderCalendar(data) {
+    lastCalendar = data;
+    $('cal-csv-btn').hidden = false;
+    $('cal-report-csv').hidden = false;
+    $('cal-report-pdf').hidden = false;
+    const grid = $('cal-grid');
+    grid.innerHTML = '';
+    const days = data.days || [];
+    const maxEvents = days.reduce((m, d) => (d.events != null && d.events > m ? d.events : m), 0) || 1;
+
+    ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach(label => {
+      const h = document.createElement('div');
+      h.className = 'cal-head';
+      h.textContent = label;
+      grid.appendChild(h);
+    });
+    if (days.length) {
+      const offset = (new Date(days[0].date + 'T00:00:00Z').getUTCDay() + 6) % 7;   // Week starts on Monday
+      for (let i = 0; i < offset; i++) {
+        const blank = document.createElement('div');
+        blank.className = 'cal-cell empty';
+        grid.appendChild(blank);
+      }
+    }
+
+    days.forEach(d => {
+      const cell = document.createElement('div');
+      cell.className = 'cal-cell ' + d.status;
+      const dayNum = Number(d.date.slice(8, 10));
+      cell.textContent = dayNum === 1
+        ? new Date(d.date + 'T00:00:00Z').toLocaleString('en', { month: 'short', timeZone: 'UTC' }) + ' 1'
+        : String(dayNum);
+      if (d.events != null) {
+        const alpha = 0.12 + 0.88 * Math.sqrt(d.events / maxEvents);
+        cell.style.background = `rgba(${COLORS.heat},${alpha.toFixed(2)})`;
+        const burned = d.burned_km2 != null
+          ? `\n≈ ${fmtKm2(d.burned_km2)} burned (estimate, ${fmtKm2(d.burned_km2_low)}–${fmtKm2(d.burned_km2_high)})` : '';
+        cell.title = `${d.date}\n${d.events.toLocaleString()} fire events (${d.confirmed} confirmed, ${d.likely} likely)\n` +
+          `Total intensity ${Number(d.frp_sum).toLocaleString()} MW${burned}\n${STATUS_TEXT[d.status] || d.status}` +
+          (d.score != null ? ` (score ${d.score})` : '') + '\nClick to show this day on the map';
+        cell.addEventListener('click', () => { $('date-input').value = d.date; runQuery(d.date); });
+      } else {
+        cell.title = d.date + '\nno data downloaded';
+      }
+      grid.appendChild(cell);
+    });
+
+    const s = data.summary || {};
+    const b = data.baseline;
+    const burnedLine = s.burned_km2 != null
+      ? ` · ≈ ${fmtKm2(s.burned_km2)} burned (${fmtKm2(s.burned_km2_low)}–${fmtKm2(s.burned_km2_high)})` : '';
+    $('cal-summary').textContent = (b
+      ? `Typical day: ${Math.round(b.median).toLocaleString()} events · ${s.unusual_days} unusual · ${s.elevated_days} elevated · ${s.critical_periods} critical period(s)`
+      : 'Not enough days with data to judge what is unusual.') + burnedLine;
+
+    const pl = $('cal-periods');
+    pl.innerHTML = '';
+    const periods = data.periods || [];
+    periods.forEach(p => {
+      const div = document.createElement('div');
+      div.className = 'cal-period';
+      div.innerHTML = `<b>⚠️ Critical period</b> ${esc(p.start)} → ${esc(p.end)} (${p.days} days)<br/>` +
+        `peak ${esc(p.peak_date)}: ${p.peak_events.toLocaleString()} events · total ${p.total_events.toLocaleString()}` +
+        (p.burned_km2 ? ` · ≈ ${fmtKm2(p.burned_km2)} burned` : '');
+      div.addEventListener('click', () => { $('date-input').value = p.peak_date; runQuery(p.peak_date); });
+      pl.appendChild(div);
+    });
+    if (!periods.length && b) pl.innerHTML = '<div class="no-alerts">✓ No critical periods in this window.</div>';
+
+    $('cal-notes').innerHTML = (data.notes || []).map(n => '<div>• ' + esc(n) + '</div>').join('');
+  }
+
+  async function buildCalendar() {
+    if (calBusy) return;
+    if (!currentBbox) { setCalMsg('Draw a box on the map first - the calendar is built for one region.', true); return; }
+    if (areaSqDeg(currentBbox) > 300) {
+      setCalMsg('That box is too large for the calendar (max about 17°×17°). Draw a smaller one.', true);
+      return;
+    }
+    const params = new URLSearchParams({ bbox: currentBbox, days: $('cal-days').value });
+    const end = $('date-input').value;
+    if (end) params.set('end', end);
+
+    calBusy = true;
+    $('cal-btn').disabled = true;
+    setCalMsg('Building calendar… it downloads every day from NASA, so it can take a minute or two.', false, true);
+    try {
+      const res = await fetch('/api/calendar?' + params.toString());
+      let data;
+      try { data = await res.json(); }
+      catch (e) { throw new Error('The calendar needs the FireLink server. Start it with start_firelink.bat (or python run_all.py).'); }
+      if (!res.ok || data.error) throw new Error(data.error || ('Server error ' + res.status));
+      renderCalendar(data);
+      setCalMsg('', false);
+    } catch (e) {
+      setCalMsg('Could not build calendar: ' + e.message, true);
+    } finally {
+      calBusy = false;
+      $('cal-btn').disabled = false;
+    }
+  }
+  $('cal-btn').addEventListener('click', buildCalendar);
+
+  // ---------------------------------------------------------------- CSV / GeoJSON download
+  function csvCell(v) {
+    if (v === null || v === undefined) return '';
+    const t = String(v);
+    return /[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+  }
+  function toCsv(header, rows) {   // BOM at the start so Excel opens the file correctly
+    return '﻿' + [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+  }
+  function downloadText(filename, text, mime) {
+    const blob = new Blob([text], { type: mime || 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  function fileStem(prefix) {
+    const area = (currentMeta.bbox && currentMeta.bbox !== 'world') ? currentMeta.bbox.replace(/[^0-9.,-]/g, '').replace(/,/g, '_') : 'world';
+    return `${prefix}_${area}_${currentMeta.date || 'live'}`;
+  }
+  const DET_COLUMNS = ['latitude', 'longitude', 'status', 'confidence_score', 'distance_km', 'time_diff_hours',
+    'timestamp_utc', 'frp_mw', 'brightness_k', 'detected_by_viirs', 'detected_by_modis'];
+  function detectionsCsv(features) {
+    const rows = features.map(f => {
+      const [lon, lat] = f.geometry.coordinates;
+      const p = f.properties;
+      return [lat, lon, p.status, p.confidence_score, p.distance_km, p.time_diff_hours, p.timestamp, p.frp_mw, p.brightness, p.viirs, p.modis];
+    });
+    return toCsv(DET_COLUMNS, rows);
+  }
+  $('csv-btn').addEventListener('click', () => {
+    if (!allFeatures.length) { $('status-msg').textContent = 'Nothing to download yet - load some detections first.'; return; }
+    downloadText(fileStem('firelink_detections') + '.csv', detectionsCsv(allFeatures));
+    $('status-msg').textContent = `Downloaded ${allFeatures.length.toLocaleString()} detections as CSV` +
+      (fileTruncated ? ' (world-scale data: only Confirmed + Likely are included - draw a smaller area to get every point).' : '.');
+  });
+  $('geojson-btn').addEventListener('click', () => {
+    if (!allFeatures.length) { $('status-msg').textContent = 'Nothing to download yet - load some detections first.'; return; }
+    downloadText(fileStem('firelink_detections') + '.geojson',
+      JSON.stringify({ type: 'FeatureCollection', features: allFeatures.map(f => ({ type: f.type, geometry: f.geometry,
+        properties: Object.fromEntries(Object.entries(f.properties).filter(([k]) => !k.startsWith('_'))) })) }),
+      'application/geo+json');
+  });
+  $('cal-csv-btn').addEventListener('click', () => {
+    if (!lastCalendar) return;
+    const rows = (lastCalendar.days || []).map(d => [d.date, d.status, d.events, d.confirmed, d.likely, d.single, d.weak, d.frp_sum,
+      d.burned_km2, d.burned_km2_low, d.burned_km2_high, d.burned_pixels, d.score, d.partial]);
+    downloadText(`firelink_calendar_${lastCalendar.meta.bbox.replace(/,/g, '_')}_${lastCalendar.meta.end}.csv`,
+      toCsv(['date', 'status', 'events', 'confirmed', 'likely', 'single_source', 'weak', 'frp_sum_mw',
+        'burned_km2_estimate', 'burned_km2_low', 'burned_km2_high', 'burned_1km_pixels', 'score', 'partial_day'], rows));
+  });
+
+  // ---------------------------------------------------------------- burned-area report (CSV / PDF)
+  function reportFacts() {
+    const m = lastCalendar.meta || {};
+    const s = lastCalendar.summary || {};
+    return {
+      area: (m.bbox && m.bbox !== 'world') ? m.bbox.split(',').map(Number).map(n => n.toFixed(2)).join(', ') : 'whole world',
+      bbox: m.bbox || '',
+      period: (m.start && m.end) ? m.start + ' → ' + m.end : '',
+      end: m.end || currentMeta.date || '',
+      days: m.days || (lastCalendar.days || []).length,
+      total: s.burned_km2, low: s.burned_km2_low, high: s.burned_km2_high,
+      cells: s.burned_pixels, unusual: s.unusual_days, elevated: s.elevated_days,
+      periods: s.critical_periods, method: s.burned_method || '',
+      generated: new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
+    };
+  }
+  function reportFileStem() {
+    const f = reportFacts();
+    return 'firelink_burned_area_' + (f.bbox || 'world').replace(/[^0-9.,-]/g, '').replace(/,/g, '_') + '_' + (f.end || 'period');
+  }
+
+  $('cal-report-csv').addEventListener('click', () => {
+    if (!lastCalendar) return;
+    const f = reportFacts();
+    const lines = [
+      ['FireLink - burned-area estimate report'],
+      ['Area (west, south, east, north)', f.area],
+      ['Period', f.period + ' (' + f.days + ' days)'],
+      ['Generated', f.generated],
+      [],
+      ['Burned area total (km2, estimate)', f.total],
+      ['Range (km2)', f.low + ' - ' + f.high],
+      ['1 km fire cells (pixel-days)', f.cells],
+      ['Unusual days', f.unusual],
+      ['Elevated days', f.elevated],
+      ['Critical periods', f.periods],
+      ['Method', f.method],
+      [],
+      ['date', 'status', 'events', 'confirmed', 'likely', 'frp_sum_mw',
+        'burned_km2_estimate', 'burned_km2_low', 'burned_km2_high', 'burned_1km_pixels', 'partial_day']
+    ];
+    (lastCalendar.days || []).forEach(d => lines.push([d.date, d.status, d.events, d.confirmed, d.likely, d.frp_sum,
+      d.burned_km2, d.burned_km2_low, d.burned_km2_high, d.burned_pixels, d.partial]));
+    const csv = '\ufeff' + lines.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+    downloadText(reportFileStem() + '.csv', csv);
+    $('cal-msg').textContent = 'Burned-area report downloaded (CSV).';
+  });
+
+  $('cal-report-pdf').addEventListener('click', () => {
+    if (!lastCalendar) return;
+    const w = window.open('', '_blank');
+    if (!w) { $('cal-msg').textContent = 'Your browser blocked the report tab - allow pop-ups for this page.'; return; }
+    w.document.write(burnedReportHtml());
+    w.document.close();
+    setTimeout(() => { try { w.focus(); w.print(); } catch (e) { /* It prints from the tab itself */ } }, 700);
+  });
+
+  function burnedReportHtml() {
+    const f = reportFacts();
+    const days = (lastCalendar.days || []).filter(d => d.events != null);
+    const max = days.reduce((m, d) => Math.max(m, Number(d.burned_km2) || 0), 0) || 1;
+    const bars = days.map(d => {
+      const pc = ((Number(d.burned_km2) || 0) / max * 100).toFixed(1);
+      return '<div class="barrow"><span class="bd">' + esc(d.date) + '</span>' +
+        '<span class="bt"><i style="width:' + pc + '%"></i></span>' +
+        '<span class="bv">' + (d.burned_km2 != null ? fmtKm2(d.burned_km2) : '-') + '</span></div>';
+    }).join('');
+    const table = days.map(d => '<tr><td>' + esc(d.date) + '</td><td>' + (d.events != null ? d.events.toLocaleString() : '-') + '</td>' +
+      '<td>' + (d.frp_sum != null ? Number(d.frp_sum).toLocaleString() : '-') + '</td>' +
+      '<td>' + (d.burned_km2 != null ? fmtKm2(d.burned_km2) : '-') + '</td>' +
+      '<td>' + (d.burned_km2 != null ? fmtKm2(d.burned_km2_low) + ' - ' + fmtKm2(d.burned_km2_high) : '-') + '</td>' +
+      '<td>' + esc(d.status || '') + '</td></tr>').join('');
+    const periods = (lastCalendar.periods || []).map(p =>
+      '<li><b>' + esc(p.start) + ' → ' + esc(p.end) + '</b> (' + p.days + ' days) - peak ' + esc(p.peak_date) + ': ' +
+      p.peak_events.toLocaleString() + ' events, ≈ ' + fmtKm2(p.burned_km2) + ' burned</li>').join('');
+    const notes = (lastCalendar.notes || []).map(n => '<li>' + esc(n) + '</li>').join('');
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>FireLink burned-area report ' + esc(f.period) + '</title>' +
+'<style>' +
+'  @page { margin: 14mm; }' +
+'  body { font: 12px/1.5 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #1a1a1a; margin: 0; }' +
+'  h1 { font-size: 19px; margin: 0 0 2px; }' +
+'  .sub { color: #555; margin-bottom: 14px; }' +
+'  .kpis { display: flex; gap: 10px; margin: 12px 0 16px; }' +
+'  .kpi { border: 1px solid #d9d9d9; border-radius: 8px; padding: 8px 10px; flex: 1; }' +
+'  .kpi b { display: block; font-size: 17px; }' +
+'  .kpi span { color: #666; font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; }' +
+'  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #555; margin: 16px 0 6px; }' +
+'  table { width: 100%; border-collapse: collapse; font-size: 10.5px; }' +
+'  th, td { border-bottom: 1px solid #e3e3e3; padding: 3px 5px; text-align: left; }' +
+'  th { background: #f4f4f4; }' +
+'  .barrow { display: flex; align-items: center; gap: 6px; font-size: 9.5px; margin-bottom: 2px; }' +
+'  .bd { width: 74px; color: #555; } .bv { width: 62px; text-align: right; }' +
+'  .bt { flex: 1; background: #eee; height: 8px; border-radius: 4px; overflow: hidden; }' +
+'  .bt i { display: block; height: 100%; background: #D55E00; }' +
+'  .note { font-size: 10px; color: #555; border-top: 1px solid #ddd; margin-top: 16px; padding-top: 8px; }' +
+'  ul { margin: 4px 0 0 16px; padding: 0; font-size: 10.5px; }' +
+'  @media print { .noprint { display: none; } tr { page-break-inside: avoid; } }' +
+'</style></head><body>' +
+'  <h1>FireLink - burned-area estimate</h1>' +
+'  <div class="sub">Area: <b>' + esc(f.area) + '</b> · Period: <b>' + esc(f.period) + '</b> (' + f.days + ' days) · Generated ' + esc(f.generated) + '</div>' +
+'  <div class="kpis">' +
+'    <div class="kpi"><span>Burned (estimate)</span><b>' + fmtKm2(f.total) + '</b></div>' +
+'    <div class="kpi"><span>Range</span><b>' + fmtKm2(f.low) + ' - ' + fmtKm2(f.high) + '</b></div>' +
+'    <div class="kpi"><span>1 km fire cells</span><b>' + Number(f.cells || 0).toLocaleString() + '</b></div>' +
+'    <div class="kpi"><span>Unusual days</span><b>' + (f.unusual || 0) + '</b></div>' +
+'  </div>' +
+'  <h2>Daily estimate</h2>' + (bars || '<p>No days with data.</p>') +
+'  <h2>Day by day</h2>' +
+'  <table><thead><tr><th>Date</th><th>Events</th><th>Intensity (MW)</th><th>Burned ≈</th><th>Range</th><th>Status</th></tr></thead><tbody>' + table + '</tbody></table>' +
+  (periods ? '<h2>Critical periods</h2><ul>' + periods + '</ul>' : '') +
+  (notes ? '<h2>Notes</h2><ul>' + notes + '</ul>' : '') +
+'  <div class="note"><b>Method:</b> ' + esc(f.method) + '<br/>This is an estimate of area affected by fire detections, not a measured burned scar. ' +
+'Clouds, smoke and fires below the satellite detection limit are not counted, and days without data are excluded, ' +
+'so the total is a lower bound.</div>' +
+'  <p class="noprint"><button onclick="window.print()">Print / Save as PDF</button></p>' +
+'</body></html>';
+  }
+
+  // ---------------------------------------------------------------- typing coordinates by hand
+  function setCoordsMsg(t, isError) { const el = $('coords-msg'); el.className = isError ? 'error' : ''; el.textContent = t || ''; }
+
+  // Returns textual bbox \"w,s,e,n\" or throws Error with a meaningful message
+  function validateBox(w, s, e, n) {
+    const v = [w, s, e, n];
+    if (v.some(x => x === '' || x === null || !Number.isFinite(Number(x)))) throw new Error('Fill all four numbers.');
+    [w, s, e, n] = v.map(Number);
+    if (w < -180 || e > 180) throw new Error('Longitude must be between -180 and 180.');
+    if (s < -90 || n > 90) throw new Error('Latitude must be between -90 and 90.');
+    if (!(w < e)) throw new Error('West must be smaller than East (longitude).');
+    if (!(s < n)) throw new Error('South must be smaller than North (latitude).');
+    return [w, s, e, n].map(x => Number(x.toFixed(4))).join(',');
+  }
+  function boxFromPoint(lat, lon, km) {
+    if ([lat, lon, km].some(x => x === '' || !Number.isFinite(Number(x)))) throw new Error('Fill latitude, longitude and radius.');
+    lat = Number(lat); lon = Number(lon); km = Number(km);
+    if (lat < -90 || lat > 90) throw new Error('Latitude must be between -90 and 90.');
+    if (lon < -180 || lon > 180) throw new Error('Longitude must be between -180 and 180.');
+    if (!(km >= 1 && km <= 500)) throw new Error('Radius must be between 1 and 500 km.');
+    const dLat = km / 111.32;
+    const dLon = km / (111.32 * Math.max(0.05, Math.cos(lat * Math.PI / 180)));
+    const w = Math.max(-180, lon - dLon), e = Math.min(180, lon + dLon);
+    const s = Math.max(-90, lat - dLat), n = Math.min(90, lat + dLat);
+    return validateBox(w, s, e, n);
+  }
+  function fillBoxInputs(bbox) {
+    const p = bbox.split(',');
+    ['c-west', 'c-south', 'c-east', 'c-north'].forEach((id, i) => { $(id).value = p[i]; });
+  }
+  function applyTypedArea(bbox) {
+    const p = bbox.split(',').map(Number);
+    const layer = L.rectangle([[p[1], p[0]], [p[3], p[2]]], { color: '#ff6b4a', weight: 2 });
+    setArea(layer, bbox);
+    map.fitBounds([[p[1], p[0]], [p[3], p[2]]], { padding: [30, 30] });
+  }
+  $('coords-box-btn').addEventListener('click', () => {
+    try {
+      const bbox = validateBox($('c-west').value, $('c-south').value, $('c-east').value, $('c-north').value);
+      setCoordsMsg('Area set: ' + bbox + ' — loading fires…');
+      applyTypedArea(bbox);
+      runQuery($('date-input').value || null);
+    } catch (e) { setCoordsMsg(e.message, true); }
+  });
+  $('coords-pt-btn').addEventListener('click', () => {
+    try {
+      const bbox = boxFromPoint($('p-lat').value, $('p-lon').value, $('p-km').value);
+      setCoordsMsg('Area set: ' + bbox + ' — loading fires…');
+      applyTypedArea(bbox);
+      runQuery($('date-input').value || null);
+    } catch (e) { setCoordsMsg(e.message, true); }
+  });
+
+  // ---------------------------------------------------------------- history (2003 -> today), charts, comparison
+  const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const fmtMonth = (m) => MONTH_NAMES[Number(m.slice(5, 7)) - 1] + ' ' + m.slice(0, 4);
+  const fmtN = (x) => (x === null || x === undefined) ? '–' : Math.round(x).toLocaleString();
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  let histBusy = false, lastHistory = null, lastCalendar = null;
+  const LABEL_TEXT = { well_above: 'Well above average', above: 'Above average', typical: 'Close to average',
+    below: 'Below average', well_below: 'Well below average', no_reference: 'Not enough history to compare' };
+
+  function setHistMsg(text, isError, spinning) {
+    const el = $('hist-msg');
+    el.className = isError ? 'error' : '';
+    el.innerHTML = spinning ? `<span class="spin"></span>${esc(text)}` : esc(text || '');
+  }
+
+  function prepCanvas(canvas, height) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth || 300;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.height = height + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w, h: height };
+  }
+  function niceMax(v) {
+    if (!(v > 0)) return 1;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    const f = v / p;
+    return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 4 ? 4 : f <= 8 ? 8 : 10) * p;   // /4 gives clean ticks
+  }
+  const compact = (v) => v < 10 ? String(Math.round(v * 100) / 100) : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e4 ? (v / 1e3).toFixed(0) + 'k' : v >= 1e3 ? (v / 1e3).toFixed(1) + 'k' : String(Math.round(v));
+
+  function drawTooltip(ctx, w, x, y, lines) {
+    ctx.font = '11px system-ui, sans-serif';
+    const bw = Math.max(...lines.map(t => ctx.measureText(t).width)) + 12, bh = lines.length * 14 + 8;
+    const bx = Math.min(Math.max(2, x + 10), w - bw - 2), by = Math.max(2, y - bh - 6);
+    ctx.fillStyle = 'rgba(20,24,38,0.96)'; ctx.strokeStyle = css('--line');
+    ctx.beginPath(); ctx.rect(bx, by, bw, bh); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = css('--text'); ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    lines.forEach((t, i) => ctx.fillText(t, bx + 6, by + 5 + i * 14));
+  }
+
+  // The first plot: number of hotspots (cell-days) per month since 2003
+  function drawMonthlyChart(data, hoverIdx) {
+    const canvas = $('hist-chart1');
+    const { ctx, w, h } = prepCanvas(canvas, 190);
+    const L0 = 38, R0 = 6, T0 = 8, B0 = 20, pw = w - L0 - R0, ph = h - T0 - B0;
+    const months = data.months, N = months.length;
+    const showRaw = $('hist-raw').checked;
+    let maxV = 1;
+    months.forEach(r => {
+      [r.unified, r.high, showRaw ? r.modis : null, showRaw ? r.viirs : null].forEach(v => { if (v != null && v > maxV) maxV = v; });
+    });
+    maxV = niceMax(maxV);
+    const X = (i) => L0 + (N <= 1 ? 0 : (i / (N - 1)) * pw), Y = (v) => T0 + ph - (v / maxV) * ph;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = '10px system-ui, sans-serif'; ctx.textBaseline = 'middle';
+    for (let t = 0; t <= 4; t++) {
+      const v = (maxV * t) / 4, y = Y(v);
+      ctx.strokeStyle = css('--line'); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(L0, y); ctx.lineTo(w - R0, y); ctx.stroke();
+      ctx.fillStyle = css('--muted'); ctx.textAlign = 'right'; ctx.fillText(compact(v), L0 - 4, y);
+    }
+    // Years on the horizontal axis
+    const years = [...new Set(months.map(r => r.month.slice(0, 4)))];
+    const every = Math.max(1, Math.ceil(years.length * 34 / pw));
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = css('--muted');
+    months.forEach((r, i) => {
+      if (r.month.slice(5) === '01' && (Number(r.month.slice(0, 4)) % every === 0)) ctx.fillText(r.month.slice(0, 4), X(i), h - B0 + 5);
+    });
+    // Start of the VIIRS era (from here the numbers are actual measurements, before that MODIS calibrated)
+    const vi = months.findIndex(r => r.source === 'viirs');
+    if (vi > 0) {
+      ctx.setLineDash([3, 3]); ctx.strokeStyle = css('--muted');
+      ctx.beginPath(); ctx.moveTo(X(vi), T0); ctx.lineTo(X(vi), T0 + ph); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = css('--muted'); ctx.textAlign = 'left'; ctx.fillText('VIIRS →', X(vi) + 3, T0 + 2);
+    }
+    // Uncertainty range for calibrated months
+    ctx.fillStyle = 'rgba(255,107,74,0.18)';
+    let run = [];
+    const flush = () => {
+      if (run.length > 1) {
+        ctx.beginPath();
+        run.forEach((i, k) => { const y = Y(months[i].high); k ? ctx.lineTo(X(i), y) : ctx.moveTo(X(i), y); });
+        for (let k = run.length - 1; k >= 0; k--) ctx.lineTo(X(run[k]), Y(months[run[k]].low));
+        ctx.closePath(); ctx.fill();
+      }
+      run = [];
+    };
+    months.forEach((r, i) => { if (r.low != null && r.high != null) run.push(i); else flush(); });
+    flush();
+
+    const line = (key, color, width) => {
+      ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
+      let pen = false;
+      months.forEach((r, i) => {
+        if (r[key] == null) { pen = false; return; }
+        pen ? ctx.lineTo(X(i), Y(r[key])) : ctx.moveTo(X(i), Y(r[key]));
+        pen = true;
+      });
+      ctx.stroke();
+    };
+    if (showRaw) { line('modis', '#4a90ff', 1); line('viirs', '#34d399', 1); }
+    line('unified', css('--accent'), 1.6);
+
+    const sel = data.comparison && data.comparison.month;
+    const si = months.findIndex(r => r.month === sel);
+    if (si >= 0) {
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
+      ctx.beginPath(); ctx.moveTo(X(si), T0); ctx.lineTo(X(si), T0 + ph); ctx.stroke(); ctx.setLineDash([]);
+    }
+    const last = months[N - 1];
+    if (last && last.partial && last.unified != null) {   // Current month missing: empty circle
+      ctx.strokeStyle = css('--accent'); ctx.fillStyle = css('--bg'); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(X(N - 1), Y(last.unified), 3, 0, 7); ctx.fill(); ctx.stroke();
+    }
+    if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < N) {
+      const r = months[hoverIdx], x = X(hoverIdx);
+      ctx.strokeStyle = css('--text'); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, T0); ctx.lineTo(x, T0 + ph); ctx.stroke();
+      const src = { viirs: 'VIIRS (measured)', modis_calibrated: 'MODIS × calibration', modis_uncalibrated: 'MODIS raw (not calibrated)', missing: 'no data' }[r.source] || r.source;
+      const lines = [fmtMonth(r.month) + (r.partial ? ' (so far)' : ''), 'Unified: ' + fmtN(r.unified), src];
+      if (r.low != null) lines.push(`range ${fmtN(r.low)} – ${fmtN(r.high)}`);
+      lines.push(`MODIS ${fmtN(r.modis)} · VIIRS ${fmtN(r.viirs)}`);
+      drawTooltip(ctx, w, x, r.unified != null ? Y(r.unified) : T0 + ph / 2, lines);
+    }
+  }
+
+  // The second plot: the typical year (average of each month) + the year being compared
+  function drawSeasonChart(data, hoverIdx) {
+    const canvas = $('hist-chart2');
+    const { ctx, w, h } = prepCanvas(canvas, 150);
+    const L0 = 38, R0 = 6, T0 = 8, B0 = 20, pw = w - L0 - R0, ph = h - T0 - B0;
+    const clim = data.climatology;
+    const year = data.comparison && data.comparison.month ? data.comparison.month.slice(0, 4) : null;
+    const yearVals = Array(12).fill(null);
+    if (year) data.months.forEach(r => { if (r.month.startsWith(year) && r.unified != null) yearVals[Number(r.month.slice(5, 7)) - 1] = r; });
+    let maxV = 1;
+    clim.forEach(c => { if (c.max != null && c.max > maxV) maxV = c.max; });
+    yearVals.forEach(r => { if (r && r.unified > maxV) maxV = r.unified; });
+    maxV = niceMax(maxV);
+    const slot = pw / 12, X = (i) => L0 + slot * (i + 0.5), Y = (v) => T0 + ph - (v / maxV) * ph;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = '10px system-ui, sans-serif';
+    for (let t = 0; t <= 4; t++) {
+      const v = (maxV * t) / 4, y = Y(v);
+      ctx.strokeStyle = css('--line'); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(L0, y); ctx.lineTo(w - R0, y); ctx.stroke();
+      ctx.fillStyle = css('--muted'); ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(compact(v), L0 - 4, y);
+    }
+    const peak = (data.peak_calendar_month || {}).month_num;
+    clim.forEach((c, i) => {
+      ctx.fillStyle = css('--muted'); ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(MONTH_NAMES[i][0], X(i), h - B0 + 5);
+      if (c.mean == null) return;
+      ctx.fillStyle = c.month_num === peak ? css('--accent') : 'rgba(143,150,176,0.55)';
+      ctx.fillRect(X(i) - slot * 0.32, Y(c.mean), slot * 0.64, Y(0) - Y(c.mean));
+      ctx.strokeStyle = css('--text'); ctx.lineWidth = 1;     // Min and max value across years
+      ctx.beginPath(); ctx.moveTo(X(i), Y(c.min)); ctx.lineTo(X(i), Y(c.max)); ctx.stroke();
+    });
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.6; ctx.beginPath();
+    let pen = false;
+    yearVals.forEach((r, i) => {
+      if (!r) { pen = false; return; }
+      pen ? ctx.lineTo(X(i), Y(r.unified)) : ctx.moveTo(X(i), Y(r.unified));
+      pen = true;
+    });
+    ctx.stroke();
+    yearVals.forEach((r, i) => { if (r) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(X(i), Y(r.unified), 2.2, 0, 7); ctx.fill(); } });
+    if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < 12) {
+      const c = clim[hoverIdx], yr = yearVals[hoverIdx];
+      const lines = [MONTH_NAMES[hoverIdx] + ` (average of ${c.n_years} years)`,
+        'Average: ' + fmtN(c.mean) + '  median ' + fmtN(c.median), 'Lowest ' + fmtN(c.min) + ' · highest ' + fmtN(c.max)];
+      if (yr) lines.push(`${year}: ${fmtN(yr.unified)}${yr.partial ? ' (so far)' : ''}`);
+      drawTooltip(ctx, w, X(hoverIdx), Y(c.mean || 0), lines);
+    }
+  }
+
+  function renderHistory(data) {
+    lastHistory = data;
+    const meta = data.meta, cmp = data.comparison, cal = data.harmonization;
+    $('hist-banner').innerHTML = meta.synthetic
+      ? '<div class="demo-banner">⚠ DEMO DATA — simulated, not real fires. Download a real region with build_history.py.</div>' : '';
+
+    // Compare the month to the historical average
+    const box = $('hist-compare');
+    if (!cmp.available) {
+      box.innerHTML = `<div class="cmp-card no_reference">${esc(cmp.reason || 'No data for this month.')}</div>`;
+    } else {
+      const partial = cmp.partial
+        ? ` so far (${cmp.days_elapsed} of ${cmp.days_in_month} days)` + (cmp.projected != null ? `, on track for about <b>${fmtN(cmp.projected)}</b>` : '') : '';
+      let body = `<div class="big">${esc(fmtMonth(cmp.month))}: ${esc(LABEL_TEXT[cmp.label])}</div>` +
+        `${fmtN(cmp.value)} hotspot cell-days${partial}.`;
+      if (cmp.historical_mean != null) {
+        body += `<br/>Average ${esc(MONTH_NAMES[Number(cmp.month.slice(5, 7)) - 1])} over ${cmp.years_compared} earlier years: <b>${fmtN(cmp.historical_mean)}</b> ` +
+          `(median ${fmtN(cmp.historical_median)}, range ${fmtN(cmp.historical_min.value)} in ${esc(cmp.historical_min.month.slice(0, 4))} to ${fmtN(cmp.historical_max.value)} in ${esc(cmp.historical_max.month.slice(0, 4))}).` +
+          `<br/>${cmp.ratio != null ? '×' + cmp.ratio + ' of the average · ' : ''}ranks <b>#${cmp.rank} of ${cmp.of}</b> among the same month in all years (1 = highest).`;
+      } else if (cmp.reason) {
+        body += `<br/>${esc(cmp.reason)}`;
+      }
+      box.innerHTML = `<div class="cmp-card ${esc(cmp.label)}">${body}</div>`;
+    }
+
+    ['hist-chart1', 'hist-chart2', 'hist-chart1-title', 'hist-chart2-title', 'hist-legend1', 'hist-legend2'].forEach(id => { $(id).hidden = false; });
+    $('hist-raw-label').style.display = 'flex';
+    $('hist-legend1').innerHTML =
+      `<span><i class="sw" style="background:${css('--accent')}"></i>unified series</span>` +
+      '<span><i class="sw" style="background:rgba(255,107,74,.35)"></i>calibration range (before 2012)</span>' +
+      '<span><i class="sw" style="background:#fff"></i>month being compared</span>';
+    $('hist-legend2').innerHTML =
+      '<span><i class="sw" style="background:rgba(143,150,176,.8)"></i>average (line = lowest–highest)</span>' +
+      `<span><i class="sw" style="background:${css('--accent')}"></i>most active month</span>` +
+      `<span><i class="sw" style="background:#fff"></i>${esc(cmp.month ? cmp.month.slice(0, 4) : '')}</span>`;
+    drawMonthlyChart(data, null);
+    drawSeasonChart(data, null);
+
+    // Lists: top months/years
+    const parts = [];
+    if (data.top_months.length) {
+      parts.push('<b>Most active months:</b> ' + data.top_months.slice(0, 5).map(t => `${esc(fmtMonth(t.month))} (${fmtN(t.unified)})`).join(', '));
+    }
+    if (data.top_years.length) {
+      parts.push('<b>Most active years:</b> ' + data.top_years.slice(0, 3).map(t => `${t.year} (${fmtN(t.unified)})`).join(', '));
+    }
+    if (data.peak_calendar_month) {
+      parts.push(`<b>Most active time of year:</b> ${MONTH_NAMES[data.peak_calendar_month.month_num - 1]} (average ${fmtN(data.peak_calendar_month.mean)})`);
+    }
+    $('hist-lists').innerHTML = parts.map(t => `<div class="hist-list">${t}</div>`).join('');
+
+    // How confident are we in the calibration
+    $('hist-calib').innerHTML = cal.calibrated
+      ? `<b>MODIS → VIIRS calibration:</b> VIIRS sees about ×${cal.k.toFixed(2)} of what MODIS sees${cal.seasonal ? ' (a separate factor per calendar month)' : ''}; ` +
+        `fitted on ${cal.overlap_months} months when both satellites were flying (${esc(cal.from)} → ${esc(cal.to)}), correlation ${cal.pearson_r}. ` +
+        `Typical error when predicting a year VIIRS never saw from MODIS alone: ${cal.cv_mape != null ? Math.round(cal.cv_mape * 100) + '%' : 'n/a'}` +
+        `${cal.scope === 'whole_region' ? ' (calibration of the whole downloaded region)' : ''}. Months before 2012 are estimates, shown with a range.`
+      : '<b>Not calibrated:</b> not enough overlapping months. Months before 2012 are raw MODIS counts and are not comparable with later ones.';
+    $('hist-notes').innerHTML = (data.notes || []).map(n => '<div>• ' + esc(n) + '</div>').join('') +
+      `<div>• Region "${esc(meta.region)}", ${meta.tiles} tile(s) of ~11 km, data through ${esc(meta.data_through)}. Unit: ${esc(meta.unit)}.</div>`;
+    $('hist-csv-btn').hidden = false;
+    if (cmp.month) $('hist-month').value = cmp.month;
+  }
+
+  function attachChartHover(canvasId, drawer, indexOf, onClick) {
+    const c = $(canvasId);
+    c.addEventListener('mousemove', (ev) => {
+      if (!lastHistory) return;
+      const r = c.getBoundingClientRect();
+      drawer(lastHistory, indexOf(ev.clientX - r.left, c.clientWidth));
+    });
+    c.addEventListener('mouseleave', () => { if (lastHistory) drawer(lastHistory, null); });
+    if (onClick) c.addEventListener('click', (ev) => {
+      if (!lastHistory) return;
+      const r = c.getBoundingClientRect();
+      onClick(indexOf(ev.clientX - r.left, c.clientWidth));
+    });
+  }
+  attachChartHover('hist-chart1', drawMonthlyChart,
+    (x, w) => { const n = lastHistory.months.length; return Math.max(0, Math.min(n - 1, Math.round(((x - 38) / (w - 44)) * (n - 1)))); },
+    (i) => { const m = lastHistory.months[i]; if (m && m.unified != null) loadHistory(m.month); });
+  attachChartHover('hist-chart2', drawSeasonChart,
+    (x, w) => Math.max(0, Math.min(11, Math.floor(((x - 38) / (w - 44)) * 12))));
+  $('hist-raw').addEventListener('change', () => { if (lastHistory) drawMonthlyChart(lastHistory, null); });
+  window.addEventListener('resize', () => { if (lastHistory) { drawMonthlyChart(lastHistory, null); drawSeasonChart(lastHistory, null); } });
+
+  async function loadHistory(month) {
+    if (histBusy) return;
+    const params = new URLSearchParams();
+    if (currentBbox) params.set('bbox', currentBbox);
+    const m = month || $('hist-month').value;
+    if (m) params.set('month', m);
+    if ($('hist-region').value) params.set('region', $('hist-region').value);
+    histBusy = true;
+    $('hist-btn').disabled = true;
+    setHistMsg('Reading the downloaded history…', false, true);
+    try {
+      const res = await fetch('/api/history?' + params.toString());
+      let data;
+      try { data = await res.json(); }
+      catch (e) { throw new Error('History needs the FireLink server. Start it with start_firelink.bat (or python run_all.py).'); }
+      if (!res.ok || data.error) {
+        const err = new Error(data.error || ('Server error ' + res.status));
+        err.needsDownload = !!data.needs_download;
+        throw err;
+      }
+      renderHistory(data);
+      setHistMsg('');
+    } catch (e) {
+      setHistMsg('Could not load history: ' + e.message, true);
+      if (e.needsDownload) {
+        $('dl-panel').classList.add('attn');
+        setDlMsg('This box is not downloaded yet — press "⬇ Download history for this box" once and the charts below will work for it.', 'error');
+      }
+    } finally {
+      histBusy = false;
+      $('hist-btn').disabled = false;
+    }
+  }
+  $('hist-btn').addEventListener('click', () => loadHistory(null));
+  $('hist-csv-btn').addEventListener('click', () => {
+    if (!lastHistory) return;
+    const rows = lastHistory.months.map(r => [r.month, r.unified, r.low, r.high, r.source, r.modis, r.viirs, r.partial]);
+    downloadText(`firelink_history_${lastHistory.meta.region}_${lastHistory.meta.query_bbox.replace(/,/g, '_')}.csv`,
+      toCsv(['month', 'unified_cell_days', 'low', 'high', 'source', 'modis_cell_days', 'viirs_cell_days', 'partial_month'], rows));
+  });
+  async function refreshRegions() {
+    try {
+      const res = await fetch('/api/history/regions?ts=' + Date.now());
+      const data = await res.json();
+      const sel = $('hist-region'), keep = sel.value;
+      sel.innerHTML = '<option value="">Auto (the one that contains the area)</option>';
+      (data.regions || []).forEach(r => {
+        const o = document.createElement('option');
+        o.value = r.name;
+        o.textContent = r.name + (r.synthetic ? ' (DEMO)' : '');
+        sel.appendChild(o);
+      });
+      if (keep && [...sel.options].some(o => o.value === keep)) sel.value = keep;
+    } catch (e) { /* Server not running: the menu stays \"Auto\" */ }
+  }
+  refreshRegions();
+  $('hist-month').max = new Date().toISOString().slice(0, 7);
+
+  // ---------------------------------------------------------------- download the history of the drawn box
+  // The loading itself happens on the local server (history_jobs.py) so that the page can close,
+  // and we poll the status every second and display the progress percentage and estimated time.
+  let dlPollTimer = null, dlHandled = null;
+
+  function setDlMsg(text, cls) {
+    const el = $('dl-msg');
+    el.className = cls || '';
+    el.innerHTML = text || '';
+  }
+
+  function fmtDur(sec) {
+    if (sec == null || !isFinite(sec) || sec < 0) return '—';
+    if (sec < 90) return Math.round(sec) + ' s';
+    if (sec < 5400) return Math.round(sec / 60) + ' min';
+    return (sec / 3600).toFixed(1) + ' h';
+  }
+
+  // Estimate of number of requests (each request = 5 days per satellite) so the user knows how long to wait before starting
+  function estimateChunks(startValue) {
+    const today = Date.now();
+    const daysSince = (iso) => Math.max(0, Math.ceil((today - Date.parse(iso + 'T00:00:00Z')) / 86400000));
+    let modisFrom = '2003-01-01', viirsFrom = '2012-01-20';
+    if (startValue === '2012') {
+      modisFrom = '2012-01-20';
+    } else if (startValue === '12m') {
+      modisFrom = viirsFrom = new Date(today - 365 * 86400000).toISOString().slice(0, 10);
+    }
+    return Math.ceil(daysSince(modisFrom) / 5) + Math.ceil(daysSince(viirsFrom) / 5);
+  }
+
+  function updateDlArea() {
+    $('dl-area').textContent = currentBbox || 'whole world (draw a box on the map)';
+    const est = $('dl-est');
+    if (!currentBbox) {
+      est.textContent = 'Draw a rectangle with the ▭ tool (or type coordinates) — the download follows that box.';
+      return;
+    }
+    const p = currentBbox.split(',').map(Number);
+    const wide = Math.max(0, p[2] - p[0]), tall = Math.max(0, p[3] - p[1]);
+    const chunks = estimateChunks($('dl-range').value);
+    est.innerHTML = `${wide.toFixed(1)}° wide × ${tall.toFixed(1)}° tall · about <b>${chunks.toLocaleString()}</b> ` +
+      `requests to NASA, roughly ${fmtDur(chunks * 1.5 / 3)} at normal speed` +
+      (wide * tall > 40 ? ' — that is a big area, it can take hours (you can stop and continue later).' : '');
+  }
+
+  function renderBuild(job) {
+    const prog = job.progress || {};
+    const running = job.state === 'running';
+    const pct = Math.max(0, Math.min(100, Number(prog.percent) || 0));
+    $('dl-btn').disabled = running;
+    $('dl-cancel').hidden = !running;
+    $('dl-progress').hidden = !(running || prog.total || job.state === 'cancelled');
+    $('dl-fill').style.width = pct + '%';
+
+    const bits = [];
+    if (running) {
+      const tried = (prog.done || 0) + (prog.failed || 0);
+      bits.push(prog.total
+        ? `<b>${tried.toLocaleString()}</b> of <b>${Number(prog.total).toLocaleString()}</b> requests · ${pct.toFixed(0)}%`
+        : 'Preparing the download…');
+      if (prog.total && prog.eta_seconds != null) bits.push(`about ${fmtDur(prog.eta_seconds)} left`);
+      if (prog.failed) bits.push(`${prog.failed} failed (retried next run)`);
+      if (prog.already_done) bits.push(`${Number(prog.already_done).toLocaleString()} were already downloaded`);
+    } else if (job.state === 'done') {
+      const r = job.result || {};
+      const span = (r.months && r.months[0]) ? `${r.months[0]} → ${r.months[1]}` : '';
+      bits.push(`✓ Finished · ${Number(r.chunks_done || 0).toLocaleString()} requests · ` +
+        `${Number(r.cell_days || 0).toLocaleString()} cell-days` + (span ? ` · ${span}` : ''));
+      if (r.chunks_failed) bits.push(`${Number(r.chunks_failed).toLocaleString()} request(s) still failing`);
+    } else if (job.state === 'cancelled') {
+      bits.push(`Stopped after ${Number((prog.done || 0) + (prog.failed || 0)).toLocaleString()} requests — press Download again to continue.`);
+    }
+    $('dl-status').innerHTML = bits.length ? bits.join(' · ') + `<br/><span style="opacity:.8">${esc(job.region || '')}</span>` : '';
+  }
+
+  function onBuildSettled(job) {
+    if (!job || dlHandled === job.id + ':' + job.state) return;
+    dlHandled = job.id + ':' + job.state;
+    $('dl-btn').disabled = false;
+    if (job.state === 'done') {
+      const r = job.result || {};
+      const span = (r.months && r.months[0]) ? ` · ${r.months[0]} → ${r.months[1]}` : '';
+      setDlMsg(`✓ Downloaded <b>${esc(r.region || '')}</b>${span}. Building the charts…`, 'ok');
+      refreshRegions().then(() => {
+        if (r.region) $('hist-region').value = r.region;
+        return loadHistory(null);
+      }).then(() => {
+        setDlMsg(`✓ <b>${esc(r.region || '')}</b> is ready — the charts below are for this box.`, 'ok');
+      }).catch(() => {});
+    } else if (job.state === 'cancelled') {
+      setDlMsg('Stopped. What was downloaded is saved — press Download again to continue from there.');
+    } else if (job.state === 'error') {
+      setDlMsg('Download failed: ' + esc(job.error || 'unknown error'), 'error');
+    }
+  }
+
+  async function pollBuild(isInitial) {
+    clearTimeout(dlPollTimer);
+    try {
+      const res = await fetch('/api/history/build/status?ts=' + Date.now());
+      const data = await res.json();
+      const job = data.job;
+      if (!job) return;
+      renderBuild(job);
+      if (job.state === 'running') {
+        dlPollTimer = setTimeout(pollBuild, 1500);
+      } else if (isInitial) {
+        dlHandled = job.id + ':' + job.state;      // Old load: don't do anything, just display the last state
+        if (job.state === 'error') setDlMsg('The last download failed: ' + esc(job.error || ''), 'error');
+      } else {
+        onBuildSettled(job);
+      }
+    } catch (e) {
+      if (!$('dl-progress').hidden) dlPollTimer = setTimeout(pollBuild, 4000);   // Server is still starting up
+    }
+  }
+
+  async function startDownload() {
+    if (!currentBbox) {
+      setDlMsg('Draw a box on the map first — the download is for one area.', 'error');
+      $('dl-panel').classList.add('attn');
+      return;
+    }
+    $('dl-panel').classList.remove('attn');
+    $('dl-btn').disabled = true;
+    $('dl-progress').hidden = false;
+    $('dl-fill').style.width = '0%';
+    $('dl-status').textContent = 'Starting…';
+    setDlMsg('');
+    try {
+      const res = await fetch('/api/history/build', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bbox: currentBbox, start: $('dl-range').value })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) throw new Error(data.error || ('Server error ' + res.status));
+      dlHandled = null;
+      renderBuild(data.job);
+      pollBuild(false);
+    } catch (e) {
+      $('dl-btn').disabled = false;
+      setDlMsg('Could not start the download: ' + esc(e.message), 'error');
+    }
+  }
+
+  $('dl-btn').addEventListener('click', startDownload);
+  $('dl-range').addEventListener('change', updateDlArea);
+  $('dl-cancel').addEventListener('click', async () => {
+    $('dl-cancel').disabled = true;
+    try {
+      await fetch('/api/history/build/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      setDlMsg('Stopping… the current batch will finish first, then everything is saved.');
+    } catch (e) {
+      setDlMsg('Could not stop: ' + esc(e.message), 'error');
+    }
+    setTimeout(() => { $('dl-cancel').disabled = false; }, 3000);
+  });
+  updateDlArea();
+  pollBuild(true);
+
+  // ---------------------------------------------------------------- initial load + auto refresh
+  const dateInput = $('date-input');
+  dateInput.max = new Date().toISOString().split('T')[0];
+  dateInput.min = '2012-01-19';
+
+  async function loadFile(silent) {
+    try {
+      const res = await fetch('firelink_output.geojson?ts=' + Date.now());
+      if (!res.ok) throw new Error('not found');
+      renderPayload(await res.json());
+      liveFile = true;
+    } catch (e) {
+      if (!silent) {
+        $('view-label').textContent = 'No data file yet';
+        $('status-msg').textContent = 'Could not load firelink_output.geojson. Press "📡 Today" to fetch live data (needs the FireLink server), or load a file manually.';
+      }
+    }
+  }
+  if (!initFromUrl()) loadFile(false);
+  setInterval(() => { if (liveFile && !busy) loadFile(true); }, 5 * 60 * 1000);
+
+  $('file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    $('file-name').textContent = 'Loading ' + file.name + ' …';
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        liveFile = false;
+        renderPayload(JSON.parse(evt.target.result));
+        $('file-name').textContent = 'Loaded ' + file.name;
+      } catch (err) {
+        $('file-name').textContent = '';
+        $('status-msg').textContent = 'Invalid GeoJSON file.';
+      }
+    };
+    reader.readAsText(file);
+  });
+</script>
+</body>
+</html>
