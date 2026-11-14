@@ -3,6 +3,10 @@
 Two-satellite fire detection (**VIIRS** + **MODIS** from NASA FIRMS) reconciled into one map,
 with a burned-day calendar, a unified history since 2003, burned-area estimates and email alerts.
 
+## Live demo
+
+<https://firelink-cgbsvxvm.manus.space> - the full app running in a container, no install needed.
+
 ## Quick start
 
 ```bash
